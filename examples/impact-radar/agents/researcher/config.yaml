@@ -1,0 +1,86 @@
+spec_version: 1
+name: researcher
+description: >-
+  Read-only research sub-agent. Finds official LLM provider API pricing,
+  changelog, and deprecation pages and turns them into source cards + evidence
+  cards with direct quotes. Never states a fact without a source.
+
+# Runs on the OpenAI Agents SDK harness. IMPORTANT: openai-agents treats an
+# *unpinned* model as a Databricks model and can silently route through the
+# Databricks gateway (see examples/debby/agents/gpt/config.yaml). We pin a model
+# so it uses your OpenAI / OpenAI-compatible gateway instead. Override the model
+# with `--model`, or add `auth: {type: provider, name: <your-omnigent-provider>}`
+# to route a gateway/local endpoint configured via `omnigent setup`.
+executor:
+  type: omnigent
+  model: deepseek-v4-pro
+  # Route to the named `deepseek` provider in ~/.omnigent/config.yaml.
+  auth:
+    type: provider
+    name: deepseek
+  # The deep-research loop accumulates queries, sources, and evidence across
+  # levels, so give the researcher a larger context window than the default.
+  context_window: 200000
+  config:
+    harness: openai-agents
+    # Chat wire comes from the provider's `wire_api: chat` (DeepSeek has no
+    # Responses API); don't set `use_responses` here (see orchestrator note).
+
+os_env:
+  type: caller_process
+  cwd: .
+  sandbox:
+    type: none
+
+# Live-research path: the researcher searches the web via
+# scripts/adapters/search.py (Tavily REST API). That script reads TAVILY_API_KEY
+# from the environment OR the bundle's gitignored .env, so it works in every run
+# mode (including the detached server/daemon) without leaking the key into git.
+# No MCP server is needed. With no key it returns empty results and the
+# researcher falls back to scripts/adapters/fetch.py on the registry's official
+# seed URLs.
+
+# Same blast-radius guardrail the other example bundles use: the catastrophic set
+# (force-push, `rm -rf /`, hard-reset to a remote ref) is denied outright, while
+# everything else runs without an ASK — a headless sub-agent can't answer a
+# prompt.
+guardrails:
+  policies:
+    blast_radius:
+      type: function
+      on: [tool_call]
+      function:
+        path: omnigent.inner.nessie.policies.blast_radius
+        arguments:
+          gate_pushes: false
+
+prompt: |
+  You are the research head of LLM Impact Radar. You run a DEEP-RESEARCH LOOP to
+  find AUTHORITATIVE official facts about an LLM provider's API pricing,
+  changelog, deprecation, or migration — the authoritative page plus a verifiable
+  evidence trail, not many pages.
+
+  Load and follow the `api-source-research` and `evidence-citation` skills. The
+  `api-source-research` skill is the loop; run it end to end.
+
+  The loop (defaults: breadth=4, depth=2, official_only=true):
+  1. PLAN queries with `scripts/plan_queries.py` (provider × facets → query plan).
+  2. SEARCH each query with
+     `python3 examples/impact-radar/scripts/adapters/search.py "<query>" --domains <official-domains> --raw`
+     (live Tavily REST; reads the key from .env). Then optionally scrape a top
+     hit with `scripts/adapters/fetch.py <url>`. Record hits into
+     `source_cards.json`.
+  3. CURATE by authority with `scripts/score_sources.py`; only `conclusion`-tier
+     (official) sources may back hard facts.
+  4. EXTRACT direct quotes into `evidence_cards.json`; record facts you could NOT
+     confirm officially in `unresolved.json`.
+  5. DEEPEN: if gaps remain and depth is left, re-plan with `--gaps` and repeat.
+  6. AGGREGATE into `research_context.json` for the orchestrator.
+
+  Discipline:
+  - Every price/date/deprecation needs a backing `evidence_id` from an official
+    (`conclusion`-tier) source. Third-party pages are context only.
+  - Let the scripts own the query plan and the scoring — don't hand-wave either.
+  - You are READ-ONLY: read and fetch, never edit code, open PRs, or create
+    tickets. Write only inside the run directory. Leave genuine gaps in
+    `unresolved.json` rather than guessing.

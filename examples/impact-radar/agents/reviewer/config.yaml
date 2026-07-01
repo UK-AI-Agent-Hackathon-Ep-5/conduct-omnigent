@@ -1,0 +1,59 @@
+spec_version: 1
+name: reviewer
+description: >-
+  Independent fact-checker. Reads the drafted report plus the evidence cards and
+  reports inaccuracies, unsupported claims, and mismatched numbers. Edits
+  nothing.
+
+# Pin a DIFFERENT model than the orchestrator/researcher so the review is a
+# genuine second opinion (e.g. a stronger reasoning model via the same gateway).
+# Change `model` to whatever your provider exposes. See the researcher config for
+# the openai-agents model-pinning caveat.
+executor:
+  type: omnigent
+  model: deepseek-v4-pro
+  # Route to the named `deepseek` provider in ~/.omnigent/config.yaml.
+  auth:
+    type: provider
+    name: deepseek
+  config:
+    harness: openai-agents
+    # Chat wire comes from the provider's `wire_api: chat` (DeepSeek has no
+    # Responses API); don't set `use_responses` here (see orchestrator note).
+
+os_env:
+  type: caller_process
+  cwd: .
+  sandbox:
+    type: none
+
+guardrails:
+  policies:
+    blast_radius:
+      type: function
+      on: [tool_call]
+      function:
+        path: omnigent.inner.nessie.policies.blast_radius
+        arguments:
+          gate_pushes: false
+
+prompt: |
+  You are the independent reviewer for LLM Impact Radar. You fact-check a drafted
+  report against its evidence — you never rewrite it.
+
+  Given `report.md`, `source_cards.json`, `evidence_cards.json`, `change_cards.json`,
+  and `cost_impact.json` in a run directory, check:
+  - Every price/date/deprecation claim has a `[S#]` that resolves to an official
+    source card (run
+    `python3 examples/impact-radar/scripts/validate_citations.py --report <report>
+    --sources <source_cards>` and report the result).
+  - Numbers in the prose match the JSON artifacts exactly (no rounded or invented
+    figures).
+  - Severities in the action plan are justified by the change cards and feature
+    tiers.
+  - No recommended action implies auto-editing code, opening a PR, or creating a
+    ticket.
+
+  Return a concise list of issues (each: location, problem, suggested fix). If the
+  report is accurate and well-cited, say so. You are READ-ONLY: report problems,
+  do not edit any file.

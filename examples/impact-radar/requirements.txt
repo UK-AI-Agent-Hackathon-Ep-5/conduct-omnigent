@@ -1,0 +1,16 @@
+# The deterministic scripts under scripts/ are STDLIB-ONLY — they run with no
+# extra installs, which is what makes the demo portable. Nothing here is required
+# to run the bundle.
+#
+# Optional upgrades the scripts/adapters will use if present (and degrade
+# gracefully without):
+#   pandas   # faster cost aggregation in cost_impact.py (stdlib csv is the fallback)
+#   pyyaml   # already an Omnigent dependency; used to read data/feature_map.yaml
+#   jinja2   # nicer report templating (stdlib string building is the fallback)
+#
+# External research tools (all optional; adapters fall back to urllib):
+#   Tavily MCP  -> `npx -y tavily-mcp` + TAVILY_API_KEY
+#   Firecrawl   -> FIRECRAWL_API_KEY (scripts/adapters/fetch.py)
+#
+# External code-scan tools (optional; regex fallback in scan_code.py):
+#   semgrep, ast-grep
