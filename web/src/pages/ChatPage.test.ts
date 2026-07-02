@@ -118,6 +118,35 @@ describe("report chat response extraction", () => {
 
     expect(result).toBe("Native answer.");
   });
+
+  it("keeps answer content when the consumed event was missed", async () => {
+    const controller = new AbortController();
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.output_item.done", {
+          item: {
+            id: "msg_new",
+            type: "message",
+            response_id: "resp_new",
+            content: [{ type: "output_text", text: "Recovered answer." }],
+          },
+        }),
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_new",
+            status: "completed",
+            output: [],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      { inputItemId: "ci_new" },
+    );
+
+    expect(result).toBe("Recovered answer.");
+  });
 });
 
 function sseEvent(event: string, data: Record<string, unknown>): string {

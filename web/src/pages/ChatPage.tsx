@@ -1284,10 +1284,13 @@ export async function collectReportChatResponse(
   for await (const event of parseSseStream(stream)) {
     if (waitingForInput) {
       const consumedId = matchingReportChatInputItemId(event, target);
-      if (consumedId === null) continue;
-      consumedInputItemId = consumedId;
+      if (consumedId !== null) {
+        consumedInputItemId = consumedId;
+        waitingForInput = false;
+        continue;
+      }
+      if (!reportChatEventHasAnswerText(event)) continue;
       waitingForInput = false;
-      continue;
     }
 
     const eventResponseId = streamEventResponseId(event);
@@ -1359,6 +1362,12 @@ function matchingReportChatInputItemId(
   if (target.inputItemId && event.itemId === target.inputItemId) return event.itemId;
   if (target.pendingId && event.clearedPendingId === target.pendingId) return event.itemId;
   return null;
+}
+
+function reportChatEventHasAnswerText(event: StreamEvent): boolean {
+  if (event.type === "text_delta") return event.delta.trim().length > 0;
+  if (event.type === "message_done") return reportChatContentText(event.content).length > 0;
+  return false;
 }
 
 function streamEventResponseId(event: StreamEvent): string | null {
