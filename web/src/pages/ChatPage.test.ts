@@ -8,6 +8,7 @@ import {
   buildPendingBubbles,
   buildSlashCommandMap,
   buildSlashCommandWithArgsSet,
+  collectReportChatResponse,
   collectBubbleMarkdown,
   collectPendingElicitations,
   computeIsWorking,
@@ -55,7 +56,184 @@ describe("report chat response extraction", () => {
       ]),
     ).toBe("First point.\nSecond point.");
   });
+
+  it("waits for the posted report chat input before collecting a response", async () => {
+    const controller = new AbortController();
+    const abortSpy = vi.spyOn(controller, "abort");
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_old",
+            status: "completed",
+            output: [{ type: "message", content: [{ type: "output_text", text: "Old answer." }] }],
+          },
+        }),
+        sseEvent("session.input.consumed", {
+          data: {
+            item_id: "ci_new",
+            type: "message",
+            data: { role: "user", content: [{ type: "input_text", text: "elaborate" }] },
+          },
+        }),
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_new",
+            status: "completed",
+            output: [
+              { type: "message", content: [{ type: "output_text", text: "Fresh answer." }] },
+            ],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      { inputItemId: "ci_new" },
+    );
+
+    expect(result).toBe("Fresh answer.");
+    expect(abortSpy).toHaveBeenCalledOnce();
+  });
+
+  it("does not wait forever for native pending input echo", async () => {
+    const controller = new AbortController();
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_native",
+            status: "completed",
+            output: [
+              { type: "message", content: [{ type: "output_text", text: "Native answer." }] },
+            ],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      { pendingId: "pending_native_1" },
+    );
+
+    expect(result).toBe("Native answer.");
+  });
+
+  it("does not reuse a prior report chat answer for a native follow-up", async () => {
+    const controller = new AbortController();
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.output_item.done", {
+          item: {
+            id: "msg_old",
+            type: "message",
+            response_id: "resp_old",
+            content: [{ type: "output_text", text: "Old answer." }],
+          },
+        }),
+        sseEvent("response.output_item.done", {
+          item: {
+            id: "msg_new",
+            type: "message",
+            response_id: "resp_new",
+            content: [{ type: "output_text", text: "Fresh follow-up." }],
+          },
+        }),
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_new",
+            status: "completed",
+            output: [],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      {
+        pendingId: "pending_native_2",
+        afterItemId: "msg_old",
+        knownItemIds: new Set(["msg_old"]),
+      },
+    );
+
+    expect(result).toBe("Fresh follow-up.");
+  });
+
+  it("waits past an empty completion for the committed answer item", async () => {
+    const controller = new AbortController();
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_new",
+            status: "completed",
+            output: [],
+          },
+        }),
+        sseEvent("response.output_item.done", {
+          item: {
+            id: "msg_new",
+            type: "message",
+            response_id: "resp_new",
+            content: [{ type: "output_text", text: "Delayed committed answer." }],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      { afterItemId: "msg_old", knownItemIds: new Set(["msg_old"]) },
+    );
+
+    expect(result).toBe("Delayed committed answer.");
+  });
+
+  it("keeps answer content when the consumed event was missed", async () => {
+    const controller = new AbortController();
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.output_item.done", {
+          item: {
+            id: "msg_new",
+            type: "message",
+            response_id: "resp_new",
+            content: [{ type: "output_text", text: "Recovered answer." }],
+          },
+        }),
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_new",
+            status: "completed",
+            output: [],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      { inputItemId: "ci_new" },
+    );
+
+    expect(result).toBe("Recovered answer.");
+  });
 });
+
+function sseEvent(event: string, data: Record<string, unknown>): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+function sseStream(events: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const event of events) {
+        controller.enqueue(encoder.encode(event));
+      }
+      controller.close();
+    },
+  });
+}
 
 describe("Composer permission gating", () => {
   it("read-only (level 1) disables textarea and submit", () => {
