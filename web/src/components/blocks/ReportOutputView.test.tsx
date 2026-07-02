@@ -66,6 +66,22 @@ describe("ReportOutputView", () => {
     expect(screen.getByText("Recommended P0 actions")).toBeDefined();
   });
 
+  it("keeps completed sections visible and shows the incoming section loader", () => {
+    render(
+      <ReportOutputView
+        report={{ ...REPORT, sections: [REPORT.sections[0]!] }}
+        enablePixi={false}
+        isStreaming
+      />,
+    );
+
+    expect(screen.getByText("Generating report")).toBeDefined();
+    expect(screen.getByText("1 complete sections")).toBeDefined();
+    expect(screen.getAllByText("Executive Summary").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("report-section-loading")).toBeDefined();
+    expect(screen.getByLabelText("Next report section loading")).toBeDefined();
+  });
+
   it("switches focus to a selected section and shows cost visualisation", () => {
     render(<ReportOutputView report={REPORT} enablePixi={false} />);
 

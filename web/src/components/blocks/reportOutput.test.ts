@@ -5,6 +5,7 @@ import {
   REPORT_OUTPUT_MARKER,
   containsReportOutput,
   parseReportOutput,
+  parseReportOutputState,
 } from "./reportOutput";
 
 const validReport = {
@@ -93,6 +94,39 @@ describe("report output parsing", () => {
   it("falls back to normal markdown when the marker or schema is missing", () => {
     expect(parseReportOutput(JSON.stringify(validReport))).toBeNull();
     expect(parseReportOutput(`${REPORT_OUTPUT_MARKER}\n{"title":"Missing sections"}`)).toBeNull();
+  });
+
+  it("returns a partial report state with complete sections from a streaming payload", () => {
+    const completeSection = validReport.sections[0]!;
+    const incomingSection = validReport.sections[1]!;
+    const text = `${REPORT_OUTPUT_MARKER}
+{
+  "report_version": 1,
+  "run_id": "streaming-run",
+  "generated_at": "2026-07-02T09:00:00Z",
+  "title": "Streaming Report",
+  "target": { "name": "Example Project" },
+  "providers": ["openai", "gemini"],
+  "sections": [
+    ${JSON.stringify(completeSection)},
+    ${JSON.stringify(incomingSection).slice(0, 80)}`;
+
+    const state = parseReportOutputState(text);
+
+    expect(state?.complete).toBe(false);
+    expect(state?.report.title).toBe("Streaming Report");
+    expect(state?.report.target?.name).toBe("Example Project");
+    expect(state?.report.providers).toEqual(["openai", "gemini"]);
+    expect(state?.report.sections).toHaveLength(1);
+    expect(state?.report.sections[0]?.title).toBe("Executive Summary");
+  });
+
+  it("returns an empty streaming shell once the report marker is present", () => {
+    const state = parseReportOutputState(`${REPORT_OUTPUT_MARKER}\n{`);
+
+    expect(state?.complete).toBe(false);
+    expect(state?.report.title).toBe("Generating report");
+    expect(state?.report.sections).toEqual([]);
   });
 
   it("detects report text inside render items", () => {

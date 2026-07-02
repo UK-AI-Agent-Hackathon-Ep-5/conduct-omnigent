@@ -58,9 +58,14 @@ const SEVERITY_STYLE: Record<
 interface ReportOutputViewProps {
   report: ReportOutput;
   enablePixi?: boolean;
+  isStreaming?: boolean;
 }
 
-export function ReportOutputView({ report, enablePixi = true }: ReportOutputViewProps) {
+export function ReportOutputView({
+  report,
+  enablePixi = true,
+  isStreaming = false,
+}: ReportOutputViewProps) {
   const [activeId, setActiveId] = useState(report.sections[0]?.id ?? "");
   const [expanded, setExpanded] = useState(true);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -91,7 +96,7 @@ export function ReportOutputView({ report, enablePixi = true }: ReportOutputView
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-brand-accent/25 bg-brand-accent/10 px-2 py-0.5 font-medium text-brand-accent text-xs">
-              Report
+              {isStreaming ? "Generating report" : "Report"}
             </span>
             <span className="text-muted-foreground text-xs">{report.run_id}</span>
           </div>
@@ -109,7 +114,7 @@ export function ReportOutputView({ report, enablePixi = true }: ReportOutputView
               </span>
             ))}
             <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs">
-              {totalFindings} sections
+              {totalFindings} {isStreaming ? "complete sections" : "sections"}
             </span>
           </div>
         </div>
@@ -161,6 +166,7 @@ export function ReportOutputView({ report, enablePixi = true }: ReportOutputView
               }}
             />
           ))}
+          {isStreaming && <IncomingSectionPreview enablePixi={enablePixi} />}
         </div>
 
         {activeSection && (
@@ -229,6 +235,7 @@ export function ReportOutputView({ report, enablePixi = true }: ReportOutputView
             </div>
           </article>
         )}
+        {!activeSection && isStreaming && <IncomingSectionDetail enablePixi={enablePixi} />}
       </div>
     </section>
   );
@@ -263,6 +270,153 @@ function ReportSectionPreview({
       <p className="mt-2 line-clamp-3 text-muted-foreground text-xs leading-5">{section.content}</p>
       <PreviewFooter section={section} />
     </button>
+  );
+}
+
+function IncomingSectionPreview({ enablePixi }: { enablePixi: boolean }) {
+  return (
+    <div
+      aria-label="Next report section loading"
+      className="min-h-44 w-72 shrink-0 snap-start rounded-lg border border-dashed border-brand-accent/35 bg-brand-accent/5 p-4"
+      data-testid="report-section-loading"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="rounded-full border border-brand-accent/25 bg-brand-accent/10 px-2 py-0.5 font-medium text-brand-accent text-xs">
+          Streaming
+        </span>
+        <LoadingDots />
+      </div>
+      <h5 className="mt-3 font-semibold text-sm leading-5 tracking-normal">Next section</h5>
+      <p className="mt-2 text-muted-foreground text-xs leading-5">
+        Waiting for the next complete report section.
+      </p>
+      <ReportLoadingCanvas enablePixi={enablePixi} />
+    </div>
+  );
+}
+
+function IncomingSectionDetail({ enablePixi }: { enablePixi: boolean }) {
+  return (
+    <article
+      className="rounded-lg border border-dashed border-brand-accent/35 bg-card p-4"
+      data-testid="report-section-loading-detail"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <span className="rounded-full border border-brand-accent/25 bg-brand-accent/10 px-2 py-0.5 font-medium text-brand-accent text-xs">
+            Streaming
+          </span>
+          <h4 className="mt-2 text-lg font-semibold leading-tight tracking-normal">
+            Report sections are arriving
+          </h4>
+        </div>
+        <LoadingDots />
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="space-y-2">
+          <div className="h-3 w-11/12 rounded-full bg-muted motion-safe:animate-pulse" />
+          <div className="h-3 w-8/12 rounded-full bg-muted motion-safe:animate-pulse" />
+          <div className="h-3 w-10/12 rounded-full bg-muted motion-safe:animate-pulse" />
+        </div>
+        <div className="rounded-lg border border-border bg-background/80 p-3">
+          <h5 className="font-medium text-sm">Incoming data</h5>
+          <ReportLoadingCanvas enablePixi={enablePixi} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function LoadingDots() {
+  return (
+    <span className="flex items-center gap-1" aria-hidden>
+      <span className="size-1.5 rounded-full bg-brand-accent motion-safe:animate-pulse" />
+      <span className="size-1.5 rounded-full bg-brand-accent/70 motion-safe:animate-pulse [animation-delay:120ms]" />
+      <span className="size-1.5 rounded-full bg-brand-accent/40 motion-safe:animate-pulse [animation-delay:240ms]" />
+    </span>
+  );
+}
+
+function ReportLoadingCanvas({ enablePixi }: { enablePixi: boolean }) {
+  const mountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (import.meta.env.MODE === "test") return;
+    if (!enablePixi || !mountRef.current) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+
+    let app: import("pixi.js").Application | null = null;
+    let tick: (() => void) | null = null;
+    let disposed = false;
+    const mount = mountRef.current;
+
+    void (async () => {
+      try {
+        const { Application, Graphics } = await import("pixi.js");
+        if (disposed) return;
+
+        app = new Application();
+        await app.init({
+          width: 224,
+          height: 48,
+          backgroundAlpha: 0,
+          antialias: true,
+          autoDensity: true,
+          resolution: Math.min(window.devicePixelRatio || 1, 2),
+          preference: "webgl",
+        });
+        if (disposed || !app) {
+          app?.destroy({ removeView: true }, { children: true });
+          return;
+        }
+
+        app.canvas.style.height = "100%";
+        app.canvas.style.width = "100%";
+        app.canvas.style.display = "block";
+        mount.replaceChildren(app.canvas);
+
+        const dots = [0, 1, 2].map((index) => {
+          const dot = new Graphics().circle(0, 0, 5).fill({ color: 0xf85018, alpha: 0.82 });
+          dot.position.set(86 + index * 26, 24);
+          app!.stage.addChild(dot);
+          return dot;
+        });
+
+        const line = new Graphics()
+          .roundRect(54, 22, 116, 4, 2)
+          .fill({ color: 0xf85018, alpha: 0.12 });
+        app.stage.addChildAt(line, 0);
+
+        tick = () => {
+          const now = performance.now();
+          dots.forEach((dot, index) => {
+            const phase = now / 280 + index * 0.75;
+            const pulse = 1 + Math.sin(phase) * 0.22;
+            dot.scale.set(pulse);
+            dot.alpha = 0.45 + Math.max(0, Math.sin(phase)) * 0.45;
+            dot.y = 24 + Math.sin(phase) * 3;
+          });
+        };
+        app.ticker.add(tick);
+      } catch {
+        mount.replaceChildren();
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      if (app && tick) app.ticker.remove(tick);
+      app?.destroy({ removeView: true }, { children: true });
+    };
+  }, [enablePixi]);
+
+  return (
+    <div className="relative mt-3 h-12 overflow-hidden rounded-md bg-muted/25">
+      <div ref={mountRef} aria-hidden className="absolute inset-0 opacity-80" />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <LoadingDots />
+      </div>
+    </div>
   );
 }
 

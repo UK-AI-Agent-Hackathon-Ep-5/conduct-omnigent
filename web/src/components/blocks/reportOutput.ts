@@ -46,6 +46,11 @@ export interface ReportOutput {
   sections: ReportSection[];
 }
 
+export interface ReportOutputParseState {
+  report: ReportOutput;
+  complete: boolean;
+}
+
 const SEVERITIES = new Set<ReportSeverity>(["critical", "high", "medium", "low", "info"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -110,6 +115,253 @@ function extractJsonObject(payload: string): string | null {
   return null;
 }
 
+function normalizeSection(section: Record<string, unknown>): ReportSection | null {
+  const id = asString(section.id);
+  const type = asString(section.type);
+  const sectionTitle = asString(section.title);
+  const content = asString(section.content);
+  if (!id || !type || !sectionTitle || content === null) return null;
+
+  return {
+    id,
+    type,
+    title: sectionTitle,
+    content,
+    severity: normalizeSeverity(section.severity),
+    data: isRecord(section.data) ? section.data : {},
+    ...(isRecord(section.citations)
+      ? {
+          citations: {
+            sources: asStringArray(section.citations.sources),
+            evidence: asStringArray(section.citations.evidence),
+          },
+        }
+      : {}),
+    editable: asStringArray(section.editable),
+    provenance: asString(section.provenance) ?? undefined,
+  };
+}
+
+function normalizeReport(parsed: unknown): ReportOutput | null {
+  if (!isRecord(parsed)) return null;
+  const title = asString(parsed.title);
+  const runId = asString(parsed.run_id);
+  const generatedAt = asString(parsed.generated_at);
+  const reportVersion = typeof parsed.report_version === "number" ? parsed.report_version : null;
+  if (!title || !runId || !generatedAt || reportVersion === null) return null;
+  if (!Array.isArray(parsed.sections)) return null;
+
+  const sections = parsed.sections.flatMap((section) => {
+    if (!isRecord(section)) return [];
+    const normalized = normalizeSection(section);
+    return normalized ? [normalized] : [];
+  });
+
+  if (sections.length === 0) return null;
+
+  return {
+    report_version: reportVersion,
+    run_id: runId,
+    generated_at: generatedAt,
+    title,
+    target: isRecord(parsed.target)
+      ? {
+          name: asString(parsed.target.name) ?? undefined,
+          path: asString(parsed.target.path) ?? undefined,
+        }
+      : undefined,
+    providers: asStringArray(parsed.providers),
+    sections,
+  };
+}
+
+function parseCompleteReportPayload(payload: string): ReportOutput | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+
+  return normalizeReport(parsed);
+}
+
+function fieldIndex(payload: string, field: string): number {
+  return payload.indexOf(`"${field}"`);
+}
+
+function topLevelPrefix(payload: string): string {
+  const sectionsIndex = fieldIndex(payload, "sections");
+  return sectionsIndex < 0 ? payload : payload.slice(0, sectionsIndex);
+}
+
+function parseJsonStringLiteral(value: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(`"${value}"`);
+    return typeof parsed === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractStringField(payload: string, field: string): string | null {
+  const match = new RegExp(`"${field}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`).exec(payload);
+  return match?.[1] ? parseJsonStringLiteral(match[1]) : null;
+}
+
+function extractNumberField(payload: string, field: string): number | null {
+  const match = new RegExp(`"${field}"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`).exec(payload);
+  if (!match?.[1]) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function completeJsonValueAfterField(
+  payload: string,
+  field: string,
+  opener: "{" | "[",
+): string | null {
+  const index = fieldIndex(payload, field);
+  if (index < 0) return null;
+
+  const valueStart = payload.indexOf(opener, index + field.length + 2);
+  if (valueStart < 0) return null;
+
+  const closer = opener === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let cursor = valueStart; cursor < payload.length; cursor += 1) {
+    const char = payload[cursor];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+    } else if (char === opener) {
+      depth += 1;
+    } else if (char === closer) {
+      depth -= 1;
+      if (depth === 0) return payload.slice(valueStart, cursor + 1);
+    }
+  }
+
+  return null;
+}
+
+function extractStringArrayField(payload: string, field: string): string[] {
+  const literal = completeJsonValueAfterField(payload, field, "[");
+  if (!literal) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(literal);
+  } catch {
+    return [];
+  }
+
+  return asStringArray(parsed);
+}
+
+function extractTarget(payload: string): ReportOutput["target"] | undefined {
+  const literal = completeJsonValueAfterField(payload, "target", "{");
+  if (!literal) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(literal);
+  } catch {
+    return undefined;
+  }
+
+  if (!isRecord(parsed)) return undefined;
+  return {
+    name: asString(parsed.name) ?? undefined,
+    path: asString(parsed.path) ?? undefined,
+  };
+}
+
+function completeSectionPayloads(payload: string): string[] {
+  const index = fieldIndex(payload, "sections");
+  if (index < 0) return [];
+
+  const arrayStart = payload.indexOf("[", index);
+  if (arrayStart < 0) return [];
+
+  const sections: string[] = [];
+  let objectStart = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let cursor = arrayStart + 1; cursor < payload.length; cursor += 1) {
+    const char = payload[cursor];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+    } else if (char === "{") {
+      if (depth === 0) objectStart = cursor;
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0 && objectStart >= 0) {
+        sections.push(payload.slice(objectStart, cursor + 1));
+        objectStart = -1;
+      }
+    } else if (char === "]" && depth === 0) {
+      break;
+    }
+  }
+
+  return sections;
+}
+
+function parsePartialReportPayload(payload: string): ReportOutput {
+  const prefix = topLevelPrefix(payload);
+  const sections = completeSectionPayloads(payload).flatMap((sectionPayload) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(sectionPayload);
+    } catch {
+      return [];
+    }
+    if (!isRecord(parsed)) return [];
+    const normalized = normalizeSection(parsed);
+    return normalized ? [normalized] : [];
+  });
+
+  return {
+    report_version: extractNumberField(prefix, "report_version") ?? 1,
+    run_id: extractStringField(prefix, "run_id") ?? "streaming-report",
+    generated_at: extractStringField(prefix, "generated_at") ?? "Receiving report",
+    title: extractStringField(prefix, "title") ?? "Generating report",
+    target: extractTarget(prefix),
+    providers: extractStringArrayField(prefix, "providers"),
+    sections,
+  };
+}
+
 export function reportPayloadText(text: string): string | null {
   const marker = findReportMarker(text);
   if (!marker) return null;
@@ -143,65 +395,19 @@ export function parseReportOutput(text: string): ReportOutput | null {
   const payload = reportPayloadText(text);
   if (payload === null) return null;
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(payload);
-  } catch {
-    return null;
-  }
+  return parseCompleteReportPayload(payload);
+}
 
-  if (!isRecord(parsed)) return null;
-  const title = asString(parsed.title);
-  const runId = asString(parsed.run_id);
-  const generatedAt = asString(parsed.generated_at);
-  const reportVersion = typeof parsed.report_version === "number" ? parsed.report_version : null;
-  if (!title || !runId || !generatedAt || reportVersion === null) return null;
-  if (!Array.isArray(parsed.sections)) return null;
+export function parseReportOutputState(text: string): ReportOutputParseState | null {
+  const payload = reportPayloadText(text);
+  if (payload === null) return null;
 
-  const sections: ReportSection[] = [];
-  for (const section of parsed.sections) {
-    if (!isRecord(section)) continue;
-    const id = asString(section.id);
-    const type = asString(section.type);
-    const sectionTitle = asString(section.title);
-    const content = asString(section.content);
-    if (!id || !type || !sectionTitle || content === null) continue;
-
-    sections.push({
-      id,
-      type,
-      title: sectionTitle,
-      content,
-      severity: normalizeSeverity(section.severity),
-      data: isRecord(section.data) ? section.data : {},
-      ...(isRecord(section.citations)
-        ? {
-            citations: {
-              sources: asStringArray(section.citations.sources),
-              evidence: asStringArray(section.citations.evidence),
-            },
-          }
-        : {}),
-      editable: asStringArray(section.editable),
-      provenance: asString(section.provenance) ?? undefined,
-    });
-  }
-
-  if (sections.length === 0) return null;
+  const complete = parseCompleteReportPayload(payload);
+  if (complete) return { report: complete, complete: true };
 
   return {
-    report_version: reportVersion,
-    run_id: runId,
-    generated_at: generatedAt,
-    title,
-    target: isRecord(parsed.target)
-      ? {
-          name: asString(parsed.target.name) ?? undefined,
-          path: asString(parsed.target.path) ?? undefined,
-        }
-      : undefined,
-    providers: asStringArray(parsed.providers),
-    sections,
+    report: parsePartialReportPayload(payload),
+    complete: false,
   };
 }
 
