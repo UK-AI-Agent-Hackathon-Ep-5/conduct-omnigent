@@ -398,6 +398,8 @@ export async function createSession(
     parentSessionId?: string;
     subAgentName?: string | null;
     title?: string;
+    labels?: Record<string, string>;
+    costControlModeOverride?: "on" | "off" | null;
   } = {},
 ): Promise<Session> {
   const body: {
@@ -406,6 +408,8 @@ export async function createSession(
     parent_session_id?: string;
     sub_agent_name?: string | null;
     title?: string;
+    labels?: Record<string, string>;
+    cost_control_mode_override?: "on" | "off" | null;
   } = { agent_id: agentId, initial_items: initialItems };
   if (options.parentSessionId !== undefined) {
     body.parent_session_id = options.parentSessionId;
@@ -415,6 +419,12 @@ export async function createSession(
   }
   if (options.title !== undefined) {
     body.title = options.title;
+  }
+  if (options.labels !== undefined) {
+    body.labels = options.labels;
+  }
+  if (options.costControlModeOverride !== undefined) {
+    body.cost_control_mode_override = options.costControlModeOverride;
   }
   const res = await authenticatedFetch("/v1/sessions", {
     method: "POST",
@@ -634,6 +644,7 @@ export async function updateSession(
     codexPlanMode?: boolean;
     costControlModeOverride?: "on" | "off" | null;
     runnerId?: string;
+    archived?: boolean;
     silent?: boolean;
   },
 ): Promise<Session> {
@@ -652,6 +663,9 @@ export async function updateSession(
   }
   if (updates.runnerId !== undefined) {
     body.runner_id = updates.runnerId;
+  }
+  if (updates.archived !== undefined) {
+    body.archived = updates.archived;
   }
   if (updates.silent) {
     body.silent = true;

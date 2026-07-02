@@ -136,6 +136,7 @@ import {
   fetchSessionItemsPage,
   openSessionStream,
   postEvent,
+  updateSession,
 } from "@/lib/sessionsApi";
 import { parseSseStream } from "@/lib/sse";
 import type { StreamEvent } from "@/lib/events";
@@ -1150,26 +1151,36 @@ interface SessionLayoutProps {
 
 interface ReportChatSessionArgs {
   agentId: string;
-  parentSessionId: string;
+  sourceSessionId: string;
   request: ReportChatRequest;
   sessions: Map<string, string>;
 }
 
 async function ensureReportChatSession({
   agentId,
-  parentSessionId,
+  sourceSessionId,
   request,
   sessions,
 }: ReportChatSessionArgs): Promise<string> {
-  const sessionKey = `${parentSessionId}:${request.threadKey}`;
+  const sessionKey = `${sourceSessionId}:${request.threadKey}`;
   const existingSessionId = sessions.get(sessionKey);
   if (existingSessionId) return existingSessionId;
 
   const session = await createSession(agentId, [], {
-    parentSessionId,
     subAgentName: null,
     title: reportChatSessionTitle(request.title),
+    labels: {
+      "omnigent.report_chat": "true",
+      "omnigent.report_chat.source_session_id": sourceSessionId,
+      "omnigent.report_chat.thread_key": request.threadKey,
+    },
+    costControlModeOverride: "off",
   });
+  try {
+    await updateSession(session.id, { archived: true, silent: true });
+  } catch {
+    // The chat still works if archiving the helper session fails.
+  }
   if (!session.runnerId) {
     const rebound = await bindOnlyOnlineRunner(session.id);
     if (rebound === null) {
@@ -1641,8 +1652,8 @@ function MainAgentSurface({
   const reportChatSessionsRef = useRef<Map<string, string>>(new Map());
   const handleReportChat = useCallback(
     async (request: ReportChatRequest) => {
-      const parentSessionId = conversationId ?? useChatStore.getState().conversationId;
-      if (!parentSessionId) {
+      const sourceSessionId = conversationId ?? useChatStore.getState().conversationId;
+      if (!sourceSessionId) {
         throw new Error("Open a report session before using report chat.");
       }
       if (!selectedAgentId) {
@@ -1650,7 +1661,7 @@ function MainAgentSurface({
       }
       const sessionId = await ensureReportChatSession({
         agentId: selectedAgentId,
-        parentSessionId,
+        sourceSessionId,
         request,
         sessions: reportChatSessionsRef.current,
       });

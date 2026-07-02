@@ -158,6 +158,32 @@ describe("createSession", () => {
     });
   });
 
+  it("forwards labels and cost control for helper sessions", async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockJsonResponse({
+        id: "conv_report_chat",
+        agent_id: "agent_xyz",
+        status: "idle",
+        created_at: 1704067200,
+      }),
+    );
+
+    await createSession("agent_xyz", [], {
+      title: "report-chat:summary",
+      labels: { "omnigent.report_chat": "true" },
+      costControlModeOverride: "off",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      agent_id: "agent_xyz",
+      initial_items: [],
+      title: "report-chat:summary",
+      labels: { "omnigent.report_chat": "true" },
+      cost_control_mode_override: "off",
+    });
+  });
+
   it("omits the optional fields entirely when no options are passed", async () => {
     fetchMock.mockResolvedValueOnce(
       mockJsonResponse({
@@ -505,6 +531,27 @@ describe("runner binding", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toEqual({
       model_override: "claude-opus-4-7",
+      silent: true,
+    });
+  });
+
+  it("PATCHes archived for helper sessions", async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockJsonResponse({
+        id: "conv_abc",
+        agent_id: "agent_xyz",
+        status: "idle",
+        created_at: 1704067200,
+        items: [],
+        archived: true,
+      }),
+    );
+
+    await updateSession("conv_abc", { archived: true, silent: true });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      archived: true,
       silent: true,
     });
   });
