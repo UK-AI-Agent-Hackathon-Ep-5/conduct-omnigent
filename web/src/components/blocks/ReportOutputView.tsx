@@ -1,9 +1,9 @@
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
-  type WheelEvent,
 } from "react";
 import {
   ActivityIcon,
@@ -111,30 +111,37 @@ export function ReportOutputView({
   const targetLabel = cleanReportText(rawTargetLabel, "Report target");
   const generatedLabel = formatGeneratedAt(report.generated_at);
 
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    function handleWheel(event: WheelEvent) {
+      const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
+      if (maxScrollLeft <= 0) return;
+
+      const dominantDelta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (dominantDelta === 0) return;
+
+      let scaledDelta = dominantDelta;
+      if (event.deltaMode === 1) scaledDelta = dominantDelta * 32;
+      if (event.deltaMode === 2) scaledDelta = dominantDelta * scroller.clientWidth;
+      const nextScrollLeft = Math.min(
+        Math.max(scroller.scrollLeft + scaledDelta, 0),
+        maxScrollLeft,
+      );
+
+      if (nextScrollLeft === scroller.scrollLeft) return;
+      event.preventDefault();
+      scroller.scrollLeft = nextScrollLeft;
+    }
+
+    scroller.addEventListener("wheel", handleWheel, { passive: false });
+    return () => scroller.removeEventListener("wheel", handleWheel);
+  }, []);
+
   function scrollSections(direction: -1 | 1) {
     scrollerRef.current?.scrollBy({ left: direction * 360, behavior: "smooth" });
-  }
-
-  function handleSectionStripWheel(event: WheelEvent<HTMLDivElement>) {
-    const scroller = event.currentTarget;
-    const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
-    if (maxScrollLeft <= 0) return;
-
-    const dominantDelta =
-      Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-    if (dominantDelta === 0) return;
-
-    let scaledDelta = dominantDelta;
-    if (event.deltaMode === 1) scaledDelta = dominantDelta * 32;
-    if (event.deltaMode === 2) scaledDelta = dominantDelta * scroller.clientWidth;
-    const nextScrollLeft = Math.min(
-      Math.max(scroller.scrollLeft + scaledDelta, 0),
-      maxScrollLeft,
-    );
-
-    if (nextScrollLeft === scroller.scrollLeft) return;
-    event.preventDefault();
-    scroller.scrollLeft = nextScrollLeft;
   }
 
   function askAboutActiveSection() {
@@ -236,7 +243,6 @@ export function ReportOutputView({
           aria-label="Report section previews"
           className="flex max-w-full snap-x gap-3 overflow-x-auto overscroll-x-contain scroll-smooth pb-3 [scrollbar-gutter:stable] [touch-action:pan-x]"
           data-testid="report-section-strip"
-          onWheel={handleSectionStripWheel}
           tabIndex={0}
         >
           {report.sections.map((section) => (
