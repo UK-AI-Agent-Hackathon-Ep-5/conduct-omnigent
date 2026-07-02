@@ -179,6 +179,7 @@ describe("Sidebar session list", () => {
     // The funnel (agent-type filter + "Show archived" toggle) was removed,
     // so its trigger button must be gone entirely.
     expect(screen.queryByRole("button", { name: "Filter sessions" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Conduct" })).toHaveAttribute("href", "/");
 
     // The sidebar issues a single session-list query with `includeArchived`
     // hard-wired to true, so archived sessions can be peeled into the
@@ -195,7 +196,7 @@ describe("Sidebar session list", () => {
     // The same card now shows the settings nav (Back to app + sections),
     // not the conversation search/list.
     expect(screen.queryByPlaceholderText("Search sessions")).toBeNull();
-    expect(screen.getByRole("link", { name: /Back to Omnigent/ })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: /Back to Conduct/ })).toHaveAttribute("href", "/");
     expect(screen.getByTestId("settings-nav-appearance")).toHaveAttribute(
       "href",
       "/settings/appearance",

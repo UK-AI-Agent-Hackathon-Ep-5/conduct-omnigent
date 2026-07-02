@@ -913,7 +913,7 @@ export function ChatPage() {
   // background tabs signal parent activity without duplicating child-session
   // badges from the sidebar/Agents rail. An open-but-untitled session
   // (no synthesized title yet) reads as "New session" to match its
-  // sidebar row; the landing page (no active session) stays "Omnigent".
+  // sidebar row; the landing page (no active session) stays "Conduct".
   // Sub-agent (child) sessions are absent from the sidebar list, so
   // ``activeConv`` is null and the title would otherwise read "New session";
   // name the tab after the sub-agent instead, mirroring the header.
@@ -922,7 +922,7 @@ export function ChatPage() {
       ? (boundAgentBySession?.name ?? boundAgentName ?? subAgentLabel ?? null)
       : null;
   useEffect(() => {
-    const fallback = urlConvId ? UNTITLED_CONVERSATION_LABEL : "Omnigent";
+    const fallback = urlConvId ? UNTITLED_CONVERSATION_LABEL : "Conduct";
     const base = truncateTitle(activeConv?.title ?? subAgentTabTitle ?? fallback);
     document.title = showsWorking ? `● ${base}` : base;
   }, [activeConv?.title, subAgentTabTitle, showsWorking, urlConvId]);
@@ -3470,7 +3470,7 @@ export function subAgentComposerLabel(
  * ~14px corner radius, hiding them behind its straight sides) and ``pb-5.5``
  * re-reserves the hidden region so the label sits above the card's top edge.
  * The card is ``position:relative`` and paints on top, so its own top border
- * is the divider. Brand pink (``brand-accent``) marks this as a sub-agent
+ * is the divider. Conduct orange (``brand-accent``) marks this as a sub-agent
  * context cue, not a status.
  *
  * @param label - The sub-agent instance name, e.g.

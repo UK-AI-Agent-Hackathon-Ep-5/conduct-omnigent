@@ -121,7 +121,7 @@ export function ModelTierPill({ model, tier }: { model: string; tier: string }) 
 /**
  * The router glyph — Lucide's `brain-circuit` icon: a brain wired into
  * circuit nodes, reading as "model intelligence picks the route".
- * Rendered in both toggle layers; the off→on cross-fade and the brand-pink
+ * Rendered in both toggle layers. The off/on cross-fade and brand-orange
  * lit color come from the `.imc-*` rules in index.css.
  */
 function RouterGlyph() {

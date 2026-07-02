@@ -45,9 +45,9 @@ vi.mock("@/components/icons/KiroIcon", () => ({
 vi.mock("@/components/icons/PiIcon", () => ({
   PiIcon: (props: Record<string, unknown>) => <svg {...props} data-icon="pi" />,
 }));
-// And for the Otto mascot — the generic sub-agent fallback icon.
+// And for the Conduct mark — the generic sub-agent fallback icon.
 vi.mock("@/components/icons/OttoIcon", () => ({
-  OttoIcon: (props: Record<string, unknown>) => <svg {...props} data-icon="otto" />,
+  OttoIcon: (props: Record<string, unknown>) => <svg {...props} data-icon="conduct" />,
 }));
 
 const useChildSessionsMock = vi.mocked(useChildSessions);
@@ -569,10 +569,10 @@ describe("SubagentsPanel", () => {
     expect(kiroRow.querySelector('[data-icon="kiro"]')).not.toBeNull();
   });
 
-  it("gives native sub-agent children role/Otto icons, not the brand logo", () => {
+  it("gives native sub-agent children role icons, not the provider logo", () => {
     // A native session's sub-agents are all the same brand, so the logo
     // is reserved for full native sessions; sub-agent rows read by role,
-    // with the Otto mascot as the generic fallback.
+    // with the Conduct mark as the generic fallback.
     mockChildTree({
       conv_root: [
         childInfo({
@@ -593,7 +593,7 @@ describe("SubagentsPanel", () => {
     const { container } = renderPanel({ rootSessionId: "conv_root" });
 
     const genericRow = childRow(container, "conv_generic");
-    expect(genericRow.querySelector('[data-icon="otto"]')).not.toBeNull();
+    expect(genericRow.querySelector('[data-icon="conduct"]')).not.toBeNull();
     expect(genericRow.querySelector('[data-icon="claude"]')).toBeNull();
 
     const exploreRow = childRow(container, "conv_explore");
@@ -649,10 +649,10 @@ describe("SubagentsPanel", () => {
     expect(piRow.querySelector('[data-icon="pi"]')).not.toBeNull();
 
     // A substring match (e.g. tool.includes("pi")) would wrongly brand this
-    // row; it must fall back to the generic Otto icon.
+    // row; it must fall back to the generic Conduct mark.
     const pipelineRow = childRow(container, "conv_pipeline");
     expect(pipelineRow.querySelector('[data-icon="pi"]')).toBeNull();
-    expect(pipelineRow.querySelector('[data-icon="otto"]')).not.toBeNull();
+    expect(pipelineRow.querySelector('[data-icon="conduct"]')).not.toBeNull();
   });
 
   it("native wrapper labels outrank the pi tool-name match", () => {
@@ -815,7 +815,7 @@ describe("SubagentsPanel", () => {
     renderPanel({ rootSessionId: "conv_root" });
 
     const mainRow = screen.getByTestId("subagent-main-row");
-    // The pulsing pink dot reads as "active" on its own, so the word is dropped.
+    // The pulsing orange dot reads as "active" on its own, so the word is dropped.
     expect(mainRow.querySelector('[data-testid="running-dot"]')).not.toBeNull();
     expect(mainRow).not.toHaveTextContent(/Working/i);
     // The label survives as the accessible name on the status indicator.
@@ -940,7 +940,7 @@ describe("SubagentsPanel", () => {
     expect(childRow(container, "c_launch")).toHaveTextContent(/Launching/);
     expect(childRow(container, "c_launch").querySelector('[data-testid="running-dot"]')).toBeNull();
     // Quiet states render no word — the label lives in the tooltip. Working is
-    // quiet too: the pulsing pink dot already reads as "active".
+    // quiet too: the pulsing orange dot already reads as "active".
     expect(childRow(container, "c_work")).not.toHaveTextContent(/Working/);
     expect(childRow(container, "c_done")).not.toHaveTextContent(/Done/);
     expect(childRow(container, "c_idle")).not.toHaveTextContent(/Idle/);

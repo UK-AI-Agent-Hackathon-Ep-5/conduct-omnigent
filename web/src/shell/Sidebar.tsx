@@ -128,6 +128,7 @@ import { useResizableSidebar } from "@/hooks/useResizableSidebar";
 import { useSessionSwitchHotkey } from "@/hooks/useSessionSwitchHotkey";
 import { usePinnedSessionHotkeys } from "@/hooks/usePinnedSessionHotkeys";
 import { absoluteTime, relativeTime } from "@/lib/relativeTime";
+import { ConductMark } from "@/components/icons/OttoIcon";
 import { SettingsSidebarBody, useSettingsRoute } from "./settingsNav";
 import {
   type ActiveChatOverride,
@@ -407,9 +408,10 @@ export function Sidebar({ open, onClose, dragProgress = null }: SidebarProps) {
             <Link
               to="/"
               onClick={onNavClick}
-              className="rounded-sm text-[15px] font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/70"
+              className="flex items-center gap-2 rounded-sm text-[15px] font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/70"
             >
-              Omnigent
+              <ConductMark className="size-5 shrink-0 text-brand-accent" />
+              Conduct
             </Link>
             <div className="flex items-center gap-1">
               {/* Inbox lives at the top next to the collapse toggle. Rendered
@@ -1886,7 +1888,7 @@ function ConversationMenuItems({
           </TooltipContent>
         </Tooltip>
       )}
-      {/* Mark as unread — re-lights the row's pink dot so a session can
+      {/* Mark as unread - re-lights the row's orange dot so a session can
           be flagged to revisit, including the one you're currently
           viewing. Hidden only when the row already shows the dot. */}
       {canMarkUnread && (
