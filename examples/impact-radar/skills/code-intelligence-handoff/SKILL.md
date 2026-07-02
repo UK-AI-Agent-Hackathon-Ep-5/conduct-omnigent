@@ -29,7 +29,11 @@ that needs concise API usage metadata.
      --repo <scanned-codebase-label> \
      --out runs/<run_id>/api_call_records.json
    ```
-3. Read `api_call_records.json` and pass its `records` array to the next step.
+3. Generate the report-facing statistics payload:
+   ```
+   python3 examples/impact-radar/scripts/summarize_handoff_stats.py      --api-call-records runs/<run_id>/api_call_records.json      --change-cards runs/<run_id>/change_cards.json      --code-impact runs/<run_id>/code_impact.json      --cost-impact runs/<run_id>/cost_impact.json      --external-research examples/impact-radar/data/external_research.example.json      --out runs/<run_id>/handoff_stats.json
+   ```
+4. Pass both `api_call_records.json` and `handoff_stats.json` to risk planning and report generation.
 
 ## Output Contract
 

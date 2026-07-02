@@ -33,6 +33,9 @@ def render(run_dir: Path, run_id: str) -> str:
     cost_impact = _load(run_dir, "cost_impact.json", {})
     risk_plan = _load(run_dir, "risk_action_plan.json", [])
     sources = _load(run_dir, "source_cards.json", [])
+    api_call_records = _load(run_dir, "api_call_records.json", {})
+    handoff_stats = _load(run_dir, "handoff_stats.json", {})
+    call_records = api_call_records.get("records", []) if isinstance(api_call_records, dict) else []
 
     out: list[str] = []
     a = out.append
@@ -51,6 +54,15 @@ def render(run_dir: Path, run_id: str) -> str:
         f"({len(deprecations)} deprecation(s), {len(price_ups)} price increase(s))."
     )
     a(f"- **{len(affected)}** code site(s) directly affected across the scanned codebase.")
+    if call_records:
+        records_with_research = sum(1 for r in call_records if r.get("external_research"))
+        records_with_cost = sum(1 for r in call_records if r.get("estimated_cost_delta_usd") is not None)
+        records_needing_verification = sum(1 for r in call_records if r.get("needs_external_verification"))
+        a(
+            f"- **{len(call_records)}** enriched API callsite record(s) prepared "
+            f"({records_with_research} with external research, {records_with_cost} with cost deltas, "
+            f"{records_needing_verification} needing verification)."
+        )
     if totals:
         a(
             f"- Projected monthly cost move: {_fmt_money(totals.get('old_cost_usd'))} → "
@@ -90,6 +102,62 @@ def render(run_dir: Path, run_id: str) -> str:
             )
     else:
         a("_No affected code sites._")
+    a("")
+
+    # API callsite intelligence handoff.
+    a("## API callsite intelligence\n")
+    if call_records:
+        a("| Risk | Likelihood | Provider | Model | Feature | Owner | Location | Cost delta | Research | Verification gaps |")
+        a("|------|------------|----------|-------|---------|-------|----------|------------|----------|-------------------|")
+        risk_order = {"high": 0, "medium": 1, "low": 2, "info": 3}
+        for record in sorted(call_records, key=lambda r: risk_order.get(r.get("migration_risk"), 4))[:20]:
+            feature = record.get("feature") or {}
+            research = record.get("external_research") or {}
+            needs = record.get("needs_external_verification") or []
+            research_status = research.get("model_status") or "unknown"
+            a(
+                f"| {record.get('migration_risk', 'unknown')} "
+                f"| {record.get('call_likelihood', 'unknown')} "
+                f"| {record.get('provider', 'unknown')} "
+                f"| `{record.get('model_name', 'unknown')}` "
+                f"| {feature.get('name') or 'unknown'} "
+                f"| {feature.get('owner') or 'unknown'} "
+                f"| `{record.get('code_location', 'unknown')}` "
+                f"| {_fmt_money(record.get('estimated_cost_delta_usd'))} "
+                f"| {research_status} "
+                f"| {', '.join(needs) if needs else 'none'} |"
+            )
+        if len(call_records) > 20:
+            a(f"\n_Showing top 20 of {len(call_records)} callsite records._")
+    else:
+        a("_No enriched API callsite handoff records supplied._")
+    a("")
+
+    # Handoff data contract statistics.
+    a("## Handoff data contract\n")
+    if handoff_stats:
+        input_summary = handoff_stats.get("input_summary", {})
+        output_summary = handoff_stats.get("output_summary", {})
+        a("| Area | Count |")
+        a("|------|------:|")
+        a(f"| Input source groups | {input_summary.get('source_count', 0)} |")
+        a(f"| Change cards | {input_summary.get('change_card_count', 0)} |")
+        a(f"| Code findings | {input_summary.get('code_finding_count', 0)} |")
+        a(f"| Cost rows | {input_summary.get('cost_row_count', 0)} |")
+        a(f"| External model research entries | {input_summary.get('external_model_research_count', 0)} |")
+        a(f"| Output callsite records | {output_summary.get('record_count', 0)} |")
+        a(f"| Output dimensions | {output_summary.get('dimension_count', 0)} |")
+        a("")
+        sources_map = input_summary.get("sources", {})
+        if sources_map:
+            a("### Handoff information sources\n")
+            a("| Source group | File | Origin |")
+            a("|--------------|------|--------|")
+            for name, meta in sources_map.items():
+                a(f"| {name} | `{meta.get('file', 'unknown')}` | {meta.get('source', 'unknown')} |")
+            a("")
+    else:
+        a("_No handoff statistics supplied._")
     a("")
 
     # Cost impact.
