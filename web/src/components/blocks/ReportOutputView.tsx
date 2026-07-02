@@ -241,7 +241,7 @@ export function ReportOutputView({
         <div
           ref={scrollerRef}
           aria-label="Report section previews"
-          className="flex max-w-full snap-x gap-3 overflow-x-auto overscroll-x-contain scroll-smooth pb-3 [scrollbar-gutter:stable] [touch-action:pan-x]"
+          className="flex max-w-full gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-3 [scrollbar-gutter:stable]"
           data-testid="report-section-strip"
           tabIndex={0}
         >
@@ -356,7 +356,7 @@ function ReportSectionPreview({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "group relative min-h-48 w-80 shrink-0 snap-start overflow-hidden rounded-xl border border-border/75 bg-background/70 p-4 text-left shadow-sm transition-[box-shadow,border-color,background-color,transform] duration-200 hover:border-brand-accent/40 hover:bg-card/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:hover:-translate-y-0.5",
+        "group relative min-h-48 w-80 shrink-0 overflow-hidden rounded-xl border border-border/75 bg-background/70 p-4 text-left shadow-sm transition-[box-shadow,border-color,background-color,transform] duration-200 hover:border-brand-accent/40 hover:bg-card/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:hover:-translate-y-0.5",
         selected && "border-brand-accent/70 bg-card shadow-md ring-1 ring-brand-accent/25",
       )}
     >
@@ -383,7 +383,7 @@ function IncomingSectionPreview() {
   return (
     <div
       aria-label="Next report section loading"
-      className="min-h-48 w-80 shrink-0 snap-start overflow-hidden rounded-xl border border-dashed border-brand-accent/40 bg-brand-accent/5 p-4"
+      className="min-h-48 w-80 shrink-0 overflow-hidden rounded-xl border border-dashed border-brand-accent/40 bg-brand-accent/5 p-4"
       data-testid="report-section-loading"
     >
       <div className="flex items-center justify-between gap-2">

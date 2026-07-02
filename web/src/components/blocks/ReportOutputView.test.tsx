@@ -104,6 +104,7 @@ describe("ReportOutputView", () => {
     fireEvent.wheel(strip, { deltaY: 180 });
 
     expect(strip.scrollLeft).toBe(180);
+    expect(strip.className).not.toContain("snap");
   });
 
   it("keeps completed sections visible and shows the incoming section loader", () => {
