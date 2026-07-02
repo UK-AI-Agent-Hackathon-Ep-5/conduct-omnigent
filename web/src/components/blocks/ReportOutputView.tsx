@@ -114,6 +114,7 @@ export function ReportOutputView({
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
+    let targetScrollLeft = scroller.scrollLeft;
 
     function handleWheel(event: WheelEvent) {
       const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
@@ -126,18 +127,28 @@ export function ReportOutputView({
       let scaledDelta = dominantDelta;
       if (event.deltaMode === 1) scaledDelta = dominantDelta * 32;
       if (event.deltaMode === 2) scaledDelta = dominantDelta * scroller.clientWidth;
+      targetScrollLeft = Math.min(Math.max(targetScrollLeft, 0), maxScrollLeft);
       const nextScrollLeft = Math.min(
-        Math.max(scroller.scrollLeft + scaledDelta, 0),
+        Math.max(targetScrollLeft + scaledDelta, 0),
         maxScrollLeft,
       );
 
-      if (nextScrollLeft === scroller.scrollLeft) return;
+      if (nextScrollLeft === targetScrollLeft) return;
       event.preventDefault();
-      scroller.scrollLeft = nextScrollLeft;
+      targetScrollLeft = nextScrollLeft;
+      smoothScrollTo(scroller, nextScrollLeft);
+    }
+
+    function syncTarget() {
+      targetScrollLeft = scroller.scrollLeft;
     }
 
     scroller.addEventListener("wheel", handleWheel, { passive: false });
-    return () => scroller.removeEventListener("wheel", handleWheel);
+    scroller.addEventListener("scroll", syncTarget, { passive: true });
+    return () => {
+      scroller.removeEventListener("wheel", handleWheel);
+      scroller.removeEventListener("scroll", syncTarget);
+    };
   }, []);
 
   function scrollSections(direction: -1 | 1) {
@@ -241,7 +252,7 @@ export function ReportOutputView({
         <div
           ref={scrollerRef}
           aria-label="Report section previews"
-          className="flex max-w-full gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-3 [scrollbar-gutter:stable]"
+          className="flex max-w-full gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth pb-3 [scrollbar-gutter:stable]"
           data-testid="report-section-strip"
           tabIndex={0}
         >
@@ -913,6 +924,14 @@ function CitationChips({ section }: { section: ReportSection }) {
       ))}
     </div>
   );
+}
+
+function smoothScrollTo(scroller: HTMLDivElement, left: number) {
+  if (typeof scroller.scrollTo !== "function") {
+    scroller.scrollLeft = left;
+    return;
+  }
+  scroller.scrollTo({ left, behavior: "smooth" });
 }
 
 function cleanReportText(value: string, fallback = ""): string {

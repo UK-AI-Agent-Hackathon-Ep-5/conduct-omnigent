@@ -100,9 +100,14 @@ describe("ReportOutputView", () => {
     const strip = screen.getByTestId("report-section-strip");
     Object.defineProperty(strip, "clientWidth", { configurable: true, value: 320 });
     Object.defineProperty(strip, "scrollWidth", { configurable: true, value: 960 });
+    const scrollTo = vi.fn((options: ScrollToOptions) => {
+      strip.scrollLeft = Number(options.left ?? 0);
+    });
+    Object.defineProperty(strip, "scrollTo", { configurable: true, value: scrollTo });
 
     fireEvent.wheel(strip, { deltaY: 180 });
 
+    expect(scrollTo).toHaveBeenCalledWith({ left: 180, behavior: "smooth" });
     expect(strip.scrollLeft).toBe(180);
     expect(strip.className).not.toContain("snap");
   });
