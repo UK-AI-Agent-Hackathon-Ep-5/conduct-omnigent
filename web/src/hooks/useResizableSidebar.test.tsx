@@ -59,8 +59,25 @@ describe("useResizableSidebar", () => {
   it("defaults to 320px with no saved preference", () => {
     const { result } = renderHook(() => useResizableSidebar());
     expect(result.current.width).toBe(320);
+    expect(result.current.resizing).toBe(false);
     // A pristine default is not a user choice, so nothing is persisted.
     expect(readPanelSizePreference("sidebarWidthPx")).toBeNull();
+  });
+
+  it("reports active resize while the pointer drag is held", () => {
+    const { result } = renderHook(() => useResizableSidebar());
+
+    act(() =>
+      result.current.handleProps.onMouseDown({
+        preventDefault: vi.fn(),
+      } as unknown as React.MouseEvent),
+    );
+
+    expect(result.current.resizing).toBe(true);
+
+    act(() => window.dispatchEvent(new MouseEvent("mouseup")));
+
+    expect(result.current.resizing).toBe(false);
   });
 
   it("widens on ArrowRight and narrows on ArrowLeft, persisting each step", () => {

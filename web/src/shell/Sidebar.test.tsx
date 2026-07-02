@@ -1033,4 +1033,23 @@ describe("Sidebar collapsed marker", () => {
     // still match [data-collapsed] and strip the glass border while open.
     expect(openAside).not.toHaveAttribute("data-collapsed");
   });
+
+  it("animates desktop expand/collapse but disables the transition while resizing", () => {
+    mockConversations(THREE_TYPE_CONVERSATIONS);
+    const { container } = renderSidebar(true);
+    const aside = container.querySelector("aside.conversations-sidebar")!;
+
+    expect(aside.className).toContain(
+      "md:transition-[width,margin,border-width,border-color,border-radius,box-shadow]",
+    );
+    expect(aside.className).not.toContain("md:transition-none");
+
+    fireEvent.mouseDown(screen.getByRole("separator", { name: "Resize sidebar" }));
+
+    expect(aside.className).toContain("md:transition-none");
+
+    fireEvent.mouseUp(window);
+
+    expect(aside.className).not.toContain("md:transition-none");
+  });
 });
