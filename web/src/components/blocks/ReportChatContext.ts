@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import type { ReportOutput, ReportSection } from "./reportOutput";
 
-export type ReportChatHandler = (quote: string) => void;
+export type ReportChatHandler = (message: string) => void;
 
 const ReportChatContext = createContext<ReportChatHandler | null>(null);
 

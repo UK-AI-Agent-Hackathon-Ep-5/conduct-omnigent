@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import {
   ActivityIcon,
   BarChart3Icon,
@@ -12,17 +6,27 @@ import {
   ChevronRightIcon,
   CircleDollarSignIcon,
   ExternalLinkIcon,
-  Maximize2Icon,
   MessageSquareTextIcon,
-  Minimize2Icon,
   SparklesIcon,
   TargetIcon,
   TrendingDownIcon,
   TrendingUpIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { buildReportSectionQuote, useReportChat } from "./ReportChatContext";
+import {
+  buildReportSectionQuote,
+  useReportChat,
+  type ReportChatHandler,
+} from "./ReportChatContext";
 import type { ReportOutput, ReportPricing, ReportSection, ReportSeverity } from "./reportOutput";
 
 const SEVERITY_ORDER: ReportSeverity[] = ["critical", "high", "medium", "low", "info"];
@@ -87,18 +91,21 @@ const REPORT_SHELL_STYLE = {
 
 const REPORT_BRAND_PATTERN = /\bConduct\s+Omnigent\b/gi;
 
+type ReportDialogMessage = {
+  id: string;
+  question: string;
+  quote: string | null;
+};
+
 interface ReportOutputViewProps {
   report: ReportOutput;
   enablePixi?: boolean;
   isStreaming?: boolean;
 }
 
-export function ReportOutputView({
-  report,
-  isStreaming = false,
-}: ReportOutputViewProps) {
+export function ReportOutputView({ report, isStreaming = false }: ReportOutputViewProps) {
   const [activeId, setActiveId] = useState(report.sections[0]?.id ?? "");
-  const [expanded, setExpanded] = useState(true);
+  const [detailOpen, setDetailOpen] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const reportChat = useReportChat();
 
@@ -112,8 +119,9 @@ export function ReportOutputView({
   const generatedLabel = formatGeneratedAt(report.generated_at);
 
   useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
+    const currentScroller = scrollerRef.current;
+    if (!currentScroller) return;
+    const scroller: HTMLDivElement = currentScroller;
     let targetScrollLeft = scroller.scrollLeft;
 
     function handleWheel(event: WheelEvent) {
@@ -128,10 +136,7 @@ export function ReportOutputView({
       if (event.deltaMode === 1) scaledDelta = dominantDelta * 32;
       if (event.deltaMode === 2) scaledDelta = dominantDelta * scroller.clientWidth;
       targetScrollLeft = Math.min(Math.max(targetScrollLeft, 0), maxScrollLeft);
-      const nextScrollLeft = Math.min(
-        Math.max(targetScrollLeft + scaledDelta, 0),
-        maxScrollLeft,
-      );
+      const nextScrollLeft = Math.min(Math.max(targetScrollLeft + scaledDelta, 0), maxScrollLeft);
 
       if (nextScrollLeft === targetScrollLeft) return;
       event.preventDefault();
@@ -155,14 +160,9 @@ export function ReportOutputView({
     scrollerRef.current?.scrollBy({ left: direction * 360, behavior: "smooth" });
   }
 
-  function askAboutActiveSection() {
-    if (!reportChat || !activeSection) return;
-    reportChat(
-      buildReportSectionQuote(
-        { ...report, title: reportTitle, target: sanitizeReportTarget(report.target) },
-        sanitizeReportSection(activeSection),
-      ),
-    );
+  function openSection(sectionId: string) {
+    setActiveId(sectionId);
+    setDetailOpen(true);
   }
 
   return (
@@ -261,93 +261,194 @@ export function ReportOutputView({
               key={section.id}
               section={section}
               selected={section.id === activeSection?.id}
-              onSelect={() => {
-                setActiveId(section.id);
-                setExpanded(true);
-              }}
+              onSelect={() => openSection(section.id)}
             />
           ))}
           {isStreaming && <IncomingSectionPreview key="incoming-section-loader" />}
         </div>
 
-        {activeSection && (
-          <article
-            className={cn(
-              "overflow-hidden rounded-xl border bg-background/65 shadow-sm transition-[border-color,box-shadow] duration-200",
-              SEVERITY_STYLE[activeSection.severity].border,
-            )}
-            data-testid="report-section-detail"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3 border-border/70 border-b p-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <SeverityBadge severity={activeSection.severity} />
-                  <span className="rounded-full border border-border/70 bg-card/55 px-2 py-0.5 text-muted-foreground text-xs">
-                    {sectionTypeLabel(activeSection.type)}
-                  </span>
-                </div>
-                <h4 className="mt-2 text-xl font-semibold leading-tight tracking-normal">
-                  {cleanReportText(activeSection.title, "Untitled section")}
-                </h4>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!reportChat}
-                  onClick={askAboutActiveSection}
-                >
-                  <MessageSquareTextIcon className="size-3.5" />
-                  Ask about section
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={expanded ? "Collapse report section" : "Expand report section"}
-                  aria-expanded={expanded}
-                  onClick={() => setExpanded((value) => !value)}
-                >
-                  {expanded ? (
-                    <Minimize2Icon className="size-3.5" />
-                  ) : (
-                    <Maximize2Icon className="size-3.5" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            <div
-              className={cn(
-                "grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none",
-                expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-              )}
-            >
-              <div className="overflow-hidden">
-                <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_21rem]">
-                  <div className="min-w-0 rounded-lg border border-border/70 bg-card/55 p-4">
-                    <div className="mb-2 flex items-center gap-2 text-muted-foreground text-xs">
-                      <SparklesIcon className="size-3.5 text-brand-accent" />
-                      Finding
-                    </div>
-                    <p className="whitespace-pre-wrap text-sm leading-6">
-                      {cleanReportText(activeSection.content)}
-                    </p>
-                    <CitationChips section={activeSection} />
-                  </div>
-                  <div className="min-w-0 space-y-3">
-                    <SectionImpactPanel section={activeSection} />
-                    <SectionDataPanel section={activeSection} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </article>
-        )}
         {!activeSection && isStreaming && <IncomingSectionDetail />}
       </div>
+      {activeSection && (
+        <ReportSectionDialog
+          report={report}
+          reportTitle={reportTitle}
+          section={activeSection}
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          reportChat={reportChat}
+        />
+      )}
     </section>
+  );
+}
+
+function ReportSectionDialog({
+  report,
+  reportTitle,
+  section,
+  open,
+  onOpenChange,
+  reportChat,
+}: {
+  report: ReportOutput;
+  reportTitle: string;
+  section: ReportSection;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  reportChat: ReportChatHandler | null;
+}) {
+  const [draft, setDraft] = useState("");
+  const [quotedText, setQuotedText] = useState("");
+  const [messages, setMessages] = useState<ReportDialogMessage[]>([]);
+  const sanitizedReport = useMemo(
+    () => ({ ...report, title: reportTitle, target: sanitizeReportTarget(report.target) }),
+    [report, reportTitle],
+  );
+  const sanitizedSection = useMemo(() => sanitizeReportSection(section), [section]);
+
+  useEffect(() => {
+    setDraft("");
+    setQuotedText("");
+    setMessages([]);
+  }, [section.id]);
+
+  function captureSelection() {
+    const selection = selectedReportText();
+    if (selection) setQuotedText(selection);
+  }
+
+  function submitQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const question = cleanReportText(draft);
+    if (!question || !reportChat) return;
+
+    const quote = quotedText || null;
+    reportChat(buildReportSectionQuestion(sanitizedReport, sanitizedSection, question, quote));
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `${section.id}-${prev.length}`,
+        question,
+        quote,
+      },
+    ]);
+    setDraft("");
+    setQuotedText("");
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-4xl"
+        data-testid="report-section-dialog"
+      >
+        <DialogHeader className="border-border/70 border-b p-4 pr-12">
+          <div className="flex flex-wrap items-center gap-2">
+            <SeverityBadge severity={section.severity} />
+            <span className="rounded-full border border-border/70 bg-card/55 px-2 py-0.5 text-muted-foreground text-xs">
+              {sectionTypeLabel(section.type)}
+            </span>
+          </div>
+          <DialogTitle className="text-xl leading-tight">
+            {cleanReportText(section.title, "Untitled section")}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Report section detail and follow-up chat
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-[calc(90vh-4rem)] overflow-y-auto">
+          <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_21rem]">
+            <div
+              className="min-w-0 rounded-lg border border-border/70 bg-card/55 p-4"
+              data-testid="report-section-content"
+              onMouseUp={captureSelection}
+            >
+              <div className="mb-2 flex items-center gap-2 text-muted-foreground text-xs">
+                <SparklesIcon className="size-3.5 text-brand-accent" />
+                Finding
+              </div>
+              <p className="whitespace-pre-wrap text-sm leading-6">
+                {cleanReportText(section.content)}
+              </p>
+              <CitationChips section={section} />
+            </div>
+            <div className="min-w-0 space-y-3">
+              <SectionImpactPanel section={section} />
+              <SectionDataPanel section={section} />
+            </div>
+          </div>
+
+          <section className="border-border/70 border-t bg-background/45 p-4">
+            <div className="flex items-center gap-2">
+              <MessageSquareTextIcon className="size-4 text-brand-accent" />
+              <h5 className="font-medium text-sm">Chat</h5>
+            </div>
+            <div
+              className="mt-3 max-h-48 min-h-28 overflow-y-auto rounded-lg border border-border/70 bg-card/55 p-3"
+              data-testid="report-section-chat-log"
+              onMouseUp={captureSelection}
+            >
+              {messages.length === 0 ? (
+                <p className="text-muted-foreground text-sm">No questions yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {messages.map((message) => (
+                    <div key={message.id} className="rounded-lg bg-background/70 p-3">
+                      {message.quote && (
+                        <blockquote className="mb-2 border-brand-accent/60 border-l-2 pl-2 text-muted-foreground text-xs leading-5">
+                          {message.quote}
+                        </blockquote>
+                      )}
+                      <p className="whitespace-pre-wrap text-sm leading-6">{message.question}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {quotedText && (
+              <div
+                className="mt-3 rounded-lg border border-brand-accent/30 bg-brand-accent/10 p-3"
+                data-testid="report-section-selected-text"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="block font-medium text-brand-accent text-xs">
+                      Selected excerpt
+                    </span>
+                    <p className="mt-1 line-clamp-3 text-muted-foreground text-xs leading-5">
+                      {quotedText}
+                    </p>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setQuotedText("")}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={submitQuestion}>
+              <Textarea
+                aria-label="Question about report section"
+                className="min-h-20 flex-1 resize-none"
+                placeholder="Ask about this section"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+              />
+              <Button
+                type="submit"
+                className="sm:self-end"
+                disabled={!reportChat || cleanReportText(draft).length === 0}
+              >
+                Ask
+              </Button>
+            </form>
+          </section>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -510,11 +611,7 @@ function SeverityMeter({ severity }: { severity: ReportSeverity }) {
   );
 }
 
-function ReportRadarCanvas({
-  counts,
-}: {
-  counts: Record<ReportSeverity, number>;
-}) {
+function ReportRadarCanvas({ counts }: { counts: Record<ReportSeverity, number> }) {
   const countsKey = SEVERITY_ORDER.map((severity) => counts[severity]).join(":");
   const stableCounts = useMemo(() => {
     const values = countsKey.split(":").map((value) => Number(value) || 0);
@@ -657,9 +754,7 @@ function MetricsPanel({ metrics }: { metrics: { label: string; value: string }[]
           return (
             <div key={`${metric.label}-${metric.value}`} className="rounded-lg bg-muted/35 p-2.5">
               <div className="flex items-center justify-between gap-3">
-                <span className="min-w-0 truncate text-muted-foreground text-xs">
-                  {label}
-                </span>
+                <span className="min-w-0 truncate text-muted-foreground text-xs">{label}</span>
                 <span className="shrink-0 font-semibold text-sm">{value}</span>
               </div>
               {numeric !== null && (
@@ -932,6 +1027,26 @@ function smoothScrollTo(scroller: HTMLDivElement, left: number) {
     return;
   }
   scroller.scrollTo({ left, behavior: "smooth" });
+}
+
+function buildReportSectionQuestion(
+  report: ReportOutput,
+  section: ReportSection,
+  question: string,
+  quote: string | null,
+): string {
+  return [
+    buildReportSectionQuote(report, section),
+    quote ? `Selected text:\n${quote}` : null,
+    `Question:\n${question}`,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n\n");
+}
+
+function selectedReportText(): string {
+  if (typeof window === "undefined") return "";
+  return cleanReportText(window.getSelection()?.toString() ?? "");
 }
 
 function cleanReportText(value: string, fallback = ""): string {

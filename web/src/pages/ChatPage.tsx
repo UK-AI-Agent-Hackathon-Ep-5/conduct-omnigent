@@ -1456,9 +1456,12 @@ function MainAgentSurface({
 
   // Active reply quotes — each "Reply ↵" click appends; consumed by Composer.
   const [replyQuotes, setReplyQuotes] = useState<string[]>([]);
-  const handleReportChat = useCallback((quote: string) => {
-    setReplyQuotes((prev) => [...prev, quote]);
-  }, []);
+  const handleReportChat = useCallback(
+    (message: string) => {
+      onSend(message);
+    },
+    [onSend],
+  );
 
   // Ref forwarded to SelectionPopup to scope selection detection to the
   // conversation area, preventing selections in the composer from triggering
