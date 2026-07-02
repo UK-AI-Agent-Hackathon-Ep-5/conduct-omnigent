@@ -77,6 +77,7 @@ export function ReportOutputView({
   const totalFindings = report.sections.filter((section) => section.type !== "source").length;
   const targetLabel = report.target?.name ?? report.target?.path ?? "Report target";
   const generatedLabel = formatGeneratedAt(report.generated_at);
+  const enableStablePixi = enablePixi && !isStreaming;
 
   function scrollSections(direction: -1 | 1) {
     scrollerRef.current?.scrollBy({ left: direction * 360, behavior: "smooth" });
@@ -119,7 +120,7 @@ export function ReportOutputView({
           </div>
         </div>
 
-        <ReportRadarCanvas counts={counts} enablePixi={enablePixi} />
+        <ReportRadarCanvas counts={counts} enablePixi={enableStablePixi} />
       </header>
 
       <div className="space-y-3 p-4">
@@ -166,7 +167,7 @@ export function ReportOutputView({
               }}
             />
           ))}
-          {isStreaming && <IncomingSectionPreview enablePixi={enablePixi} />}
+          {isStreaming && <IncomingSectionPreview key="incoming-section-loader" />}
         </div>
 
         {activeSection && (
@@ -235,7 +236,7 @@ export function ReportOutputView({
             </div>
           </article>
         )}
-        {!activeSection && isStreaming && <IncomingSectionDetail enablePixi={enablePixi} />}
+        {!activeSection && isStreaming && <IncomingSectionDetail />}
       </div>
     </section>
   );
@@ -273,7 +274,7 @@ function ReportSectionPreview({
   );
 }
 
-function IncomingSectionPreview({ enablePixi }: { enablePixi: boolean }) {
+function IncomingSectionPreview() {
   return (
     <div
       aria-label="Next report section loading"
@@ -290,12 +291,12 @@ function IncomingSectionPreview({ enablePixi }: { enablePixi: boolean }) {
       <p className="mt-2 text-muted-foreground text-xs leading-5">
         Waiting for the next complete report section.
       </p>
-      <ReportLoadingCanvas enablePixi={enablePixi} />
+      <ReportLoadingStrip />
     </div>
   );
 }
 
-function IncomingSectionDetail({ enablePixi }: { enablePixi: boolean }) {
+function IncomingSectionDetail() {
   return (
     <article
       className="rounded-lg border border-dashed border-brand-accent/35 bg-card p-4"
@@ -320,7 +321,7 @@ function IncomingSectionDetail({ enablePixi }: { enablePixi: boolean }) {
         </div>
         <div className="rounded-lg border border-border bg-background/80 p-3">
           <h5 className="font-medium text-sm">Incoming data</h5>
-          <ReportLoadingCanvas enablePixi={enablePixi} />
+          <ReportLoadingStrip />
         </div>
       </div>
     </article>
@@ -337,84 +338,16 @@ function LoadingDots() {
   );
 }
 
-function ReportLoadingCanvas({ enablePixi }: { enablePixi: boolean }) {
-  const mountRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (import.meta.env.MODE === "test") return;
-    if (!enablePixi || !mountRef.current) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-
-    let app: import("pixi.js").Application | null = null;
-    let tick: (() => void) | null = null;
-    let disposed = false;
-    const mount = mountRef.current;
-
-    void (async () => {
-      try {
-        const { Application, Graphics } = await import("pixi.js");
-        if (disposed) return;
-
-        app = new Application();
-        await app.init({
-          width: 224,
-          height: 48,
-          backgroundAlpha: 0,
-          antialias: true,
-          autoDensity: true,
-          resolution: Math.min(window.devicePixelRatio || 1, 2),
-          preference: "webgl",
-        });
-        if (disposed || !app) {
-          app?.destroy({ removeView: true }, { children: true });
-          return;
-        }
-
-        app.canvas.style.height = "100%";
-        app.canvas.style.width = "100%";
-        app.canvas.style.display = "block";
-        mount.replaceChildren(app.canvas);
-
-        const dots = [0, 1, 2].map((index) => {
-          const dot = new Graphics().circle(0, 0, 5).fill({ color: 0xf85018, alpha: 0.82 });
-          dot.position.set(86 + index * 26, 24);
-          app!.stage.addChild(dot);
-          return dot;
-        });
-
-        const line = new Graphics()
-          .roundRect(54, 22, 116, 4, 2)
-          .fill({ color: 0xf85018, alpha: 0.12 });
-        app.stage.addChildAt(line, 0);
-
-        tick = () => {
-          const now = performance.now();
-          dots.forEach((dot, index) => {
-            const phase = now / 280 + index * 0.75;
-            const pulse = 1 + Math.sin(phase) * 0.22;
-            dot.scale.set(pulse);
-            dot.alpha = 0.45 + Math.max(0, Math.sin(phase)) * 0.45;
-            dot.y = 24 + Math.sin(phase) * 3;
-          });
-        };
-        app.ticker.add(tick);
-      } catch {
-        mount.replaceChildren();
-      }
-    })();
-
-    return () => {
-      disposed = true;
-      if (app && tick) app.ticker.remove(tick);
-      app?.destroy({ removeView: true }, { children: true });
-    };
-  }, [enablePixi]);
-
+function ReportLoadingStrip() {
   return (
     <div className="relative mt-3 h-12 overflow-hidden rounded-md bg-muted/25">
-      <div ref={mountRef} aria-hidden className="absolute inset-0 opacity-80" />
-      <div className="absolute inset-0 flex items-center justify-center">
-        <LoadingDots />
+      <div className="absolute inset-x-8 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-brand-accent/10">
+        <div className="h-full w-1/2 rounded-full bg-brand-accent/70 motion-safe:animate-pulse" />
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center gap-5">
+        <span className="size-2 rounded-full bg-brand-accent/80 motion-safe:animate-pulse" />
+        <span className="size-2 rounded-full bg-brand-accent/60 motion-safe:animate-pulse [animation-delay:140ms]" />
+        <span className="size-2 rounded-full bg-brand-accent/40 motion-safe:animate-pulse [animation-delay:280ms]" />
       </div>
     </div>
   );
@@ -448,7 +381,18 @@ function ReportRadarCanvas({
   enablePixi: boolean;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const total = SEVERITY_ORDER.reduce((sum, severity) => sum + counts[severity], 0);
+  const countsKey = SEVERITY_ORDER.map((severity) => counts[severity]).join(":");
+  const stableCounts = useMemo(() => {
+    const values = countsKey.split(":").map((value) => Number(value) || 0);
+    return {
+      critical: values[0] ?? 0,
+      high: values[1] ?? 0,
+      medium: values[2] ?? 0,
+      low: values[3] ?? 0,
+      info: values[4] ?? 0,
+    } satisfies Record<ReportSeverity, number>;
+  }, [countsKey]);
+  const total = SEVERITY_ORDER.reduce((sum, severity) => sum + stableCounts[severity], 0);
 
   useEffect(() => {
     if (import.meta.env.MODE === "test") return;
@@ -476,7 +420,7 @@ function ReportRadarCanvas({
           preference: "webgl",
         });
         if (disposed || !app) {
-          app?.destroy({ removeView: true }, { children: true });
+          app?.destroy({ removeView: true, releaseGlobalResources: true }, { children: true });
           return;
         }
 
@@ -498,7 +442,7 @@ function ReportRadarCanvas({
 
         let start = -Math.PI / 2;
         for (const severity of SEVERITY_ORDER) {
-          const count = counts[severity];
+          const count = stableCounts[severity];
           if (count === 0) continue;
           const end = start + (count / total) * Math.PI * 2;
           chart
@@ -513,7 +457,7 @@ function ReportRadarCanvas({
         chart.circle(cx, cy, radius).stroke({ width: 1, color: 0x1e0d15, alpha: 0.18 });
 
         SEVERITY_ORDER.forEach((severity, index) => {
-          const barWidth = total ? Math.max(3, (counts[severity] / total) * 124) : 0;
+          const barWidth = total ? Math.max(3, (stableCounts[severity] / total) * 124) : 0;
           bars
             .roundRect(132, 18 + index * 15, barWidth, 7, 4)
             .fill({ color: SEVERITY_STYLE[severity].hex, alpha: 0.82 });
@@ -535,16 +479,16 @@ function ReportRadarCanvas({
     return () => {
       disposed = true;
       if (app && tick) app.ticker.remove(tick);
-      app?.destroy({ removeView: true }, { children: true });
+      app?.destroy({ removeView: true, releaseGlobalResources: true }, { children: true });
     };
-  }, [counts, enablePixi, total]);
+  }, [enablePixi, stableCounts, total]);
 
   return (
     <div className="relative min-h-28 overflow-hidden rounded-lg border border-border bg-muted/20">
       <div ref={mountRef} aria-hidden className="pointer-events-none absolute inset-0 opacity-70" />
       <div className="relative z-10 grid h-full grid-cols-5 gap-1 p-3">
         {SEVERITY_ORDER.map((severity) => {
-          const count = counts[severity];
+          const count = stableCounts[severity];
           const height = total ? Math.max(12, (count / total) * 72) : 12;
           return (
             <div key={severity} className="flex min-w-0 flex-col justify-end gap-1">
