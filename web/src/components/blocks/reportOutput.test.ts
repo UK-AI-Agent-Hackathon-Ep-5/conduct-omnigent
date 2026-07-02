@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { REPORT_OUTPUT_MARKER, containsReportOutput, parseReportOutput } from "./reportOutput";
+import {
+  LEGACY_REPORT_OUTPUT_MARKER,
+  REPORT_OUTPUT_END_MARKER,
+  REPORT_OUTPUT_MARKER,
+  containsReportOutput,
+  parseReportOutput,
+} from "./reportOutput";
 
 const validReport = {
   report_version: 1,
@@ -50,6 +56,38 @@ describe("report output parsing", () => {
     );
 
     expect(report?.sections[1]?.type).toBe("cost_impact");
+  });
+
+  it("parses when the whole report block is fenced", () => {
+    const report = parseReportOutput(
+      `\`\`\`json\n${REPORT_OUTPUT_MARKER}\n${JSON.stringify(validReport)}\n\`\`\``,
+    );
+
+    expect(report?.title).toBe("LLM Impact Radar Report - Example Project");
+  });
+
+  it("parses a report with surrounding prose after the marker", () => {
+    const report = parseReportOutput(
+      `Report generated below.\n\n${REPORT_OUTPUT_MARKER}\n${JSON.stringify(validReport)}\n\nDone.`,
+    );
+
+    expect(report?.run_id).toBe("example-2026-07-02T0900Z");
+  });
+
+  it("stops parsing at the visible end marker", () => {
+    const report = parseReportOutput(
+      `${REPORT_OUTPUT_MARKER}\n${JSON.stringify(validReport)}\n${REPORT_OUTPUT_END_MARKER}\nIgnored text.`,
+    );
+
+    expect(report?.title).toBe("LLM Impact Radar Report - Example Project");
+  });
+
+  it("keeps accepting the legacy html comment marker", () => {
+    const report = parseReportOutput(
+      `${LEGACY_REPORT_OUTPUT_MARKER}\n${JSON.stringify(validReport)}`,
+    );
+
+    expect(report?.sections).toHaveLength(2);
   });
 
   it("falls back to normal markdown when the marker or schema is missing", () => {

@@ -1,4 +1,6 @@
-export const REPORT_OUTPUT_MARKER = "<!-- REPORT -->";
+export const REPORT_OUTPUT_MARKER = "REPORT_OUTPUT";
+export const REPORT_OUTPUT_END_MARKER = "END_REPORT_OUTPUT";
+export const LEGACY_REPORT_OUTPUT_MARKER = "<!-- REPORT -->";
 
 export type ReportSeverity = "critical" | "high" | "medium" | "low" | "info";
 
@@ -55,7 +57,9 @@ function asString(value: unknown): string | null {
 }
 
 function asStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function normalizeSeverity(value: unknown): ReportSeverity {
@@ -71,10 +75,64 @@ function stripOptionalJsonFence(payload: string): string {
   return match?.[1]?.trim() ?? trimmed;
 }
 
+function extractJsonObject(payload: string): string | null {
+  const start = payload.indexOf("{");
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < payload.length; index += 1) {
+    const char = payload[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return payload.slice(start, index + 1);
+    }
+  }
+
+  return null;
+}
+
 export function reportPayloadText(text: string): string | null {
-  const trimmedStart = text.trimStart();
-  if (!trimmedStart.startsWith(REPORT_OUTPUT_MARKER)) return null;
-  return stripOptionalJsonFence(trimmedStart.slice(REPORT_OUTPUT_MARKER.length));
+  const marker = findReportMarker(text);
+  if (!marker) return null;
+
+  const endIndex = text.indexOf(REPORT_OUTPUT_END_MARKER, marker.end);
+  const rawPayload = endIndex < 0 ? text.slice(marker.end) : text.slice(marker.end, endIndex);
+  const payload = stripOptionalJsonFence(rawPayload);
+  return extractJsonObject(payload) ?? payload;
+}
+
+function findReportMarker(text: string): { end: number } | null {
+  const visibleMatch = /(^|\n)\s*REPORT_OUTPUT\s*(?:\n|$)/.exec(text);
+  const legacyIndex = text.indexOf(LEGACY_REPORT_OUTPUT_MARKER);
+
+  if (visibleMatch && (legacyIndex < 0 || visibleMatch.index <= legacyIndex)) {
+    return { end: visibleMatch.index + visibleMatch[0].length };
+  }
+
+  if (legacyIndex >= 0) {
+    return { end: legacyIndex + LEGACY_REPORT_OUTPUT_MARKER.length };
+  }
+
+  return null;
 }
 
 export function isReportOutputText(text: string): boolean {
