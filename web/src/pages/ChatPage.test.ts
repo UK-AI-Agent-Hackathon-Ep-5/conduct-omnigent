@@ -119,6 +119,47 @@ describe("report chat response extraction", () => {
     expect(result).toBe("Native answer.");
   });
 
+  it("does not reuse a prior report chat answer for a native follow-up", async () => {
+    const controller = new AbortController();
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.output_item.done", {
+          item: {
+            id: "msg_old",
+            type: "message",
+            response_id: "resp_old",
+            content: [{ type: "output_text", text: "Old answer." }],
+          },
+        }),
+        sseEvent("response.output_item.done", {
+          item: {
+            id: "msg_new",
+            type: "message",
+            response_id: "resp_new",
+            content: [{ type: "output_text", text: "Fresh follow-up." }],
+          },
+        }),
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_new",
+            status: "completed",
+            output: [],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      {
+        pendingId: "pending_native_2",
+        afterItemId: "msg_old",
+        knownItemIds: new Set(["msg_old"]),
+      },
+    );
+
+    expect(result).toBe("Fresh follow-up.");
+  });
+
   it("keeps answer content when the consumed event was missed", async () => {
     const controller = new AbortController();
     const result = await collectReportChatResponse(

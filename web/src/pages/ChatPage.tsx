@@ -1207,6 +1207,7 @@ async function sendReportChatMessage(
     if (!streamResponse.ok || !streamResponse.body) {
       throw new Error("Could not open the report chat stream.");
     }
+    const historyAnchor = await fetchReportChatHistoryAnchor(sessionId);
     const posted = await postEvent(sessionId, {
       type: "message",
       data: {
@@ -1225,10 +1226,12 @@ async function sendReportChatMessage(
       {
         inputItemId: posted.itemId,
         pendingId: posted.pendingId,
+        afterItemId: posted.itemId ?? historyAnchor.afterItemId,
+        knownItemIds: historyAnchor.knownItemIds,
       },
     );
     return await reportChatResponseWithTimeout(responsePromise, sessionId, controller, {
-      afterItemId: posted.itemId,
+      afterItemId: posted.itemId ?? historyAnchor.afterItemId,
     });
   } catch (error) {
     controller.abort();
@@ -1238,9 +1241,16 @@ async function sendReportChatMessage(
 
 const REPORT_CHAT_RESPONSE_TIMEOUT_MS = 60_000;
 
+interface ReportChatHistoryAnchor {
+  afterItemId?: string;
+  knownItemIds: Set<string>;
+}
+
 interface ReportChatResponseTarget {
   inputItemId?: string;
   pendingId?: string;
+  afterItemId?: string;
+  knownItemIds?: Set<string>;
 }
 
 interface ReportChatTimeoutOptions {
@@ -1254,16 +1264,23 @@ async function reportChatResponseWithTimeout(
   options: ReportChatTimeoutOptions,
 ): Promise<string> {
   let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  let didTimeout = false;
   const timeoutPromise = new Promise<string>((resolve) => {
     timeoutId = globalThis.setTimeout(() => {
+      didTimeout = true;
       controller.abort();
       void fetchReportChatLatestResponseWithRetry(sessionId, options.afterItemId)
         .then((response) => resolve(response ?? "No response returned."))
         .catch(() => resolve("No response returned."));
     }, REPORT_CHAT_RESPONSE_TIMEOUT_MS);
   });
+  const guardedResponsePromise = responsePromise.catch((error) => {
+    if (didTimeout) return new Promise<string>(() => {});
+    if (controller.signal.aborted) return "No response returned.";
+    throw error;
+  });
   try {
-    return await Promise.race([responsePromise, timeoutPromise]);
+    return await Promise.race([guardedResponsePromise, timeoutPromise]);
   } finally {
     if (timeoutId !== undefined) globalThis.clearTimeout(timeoutId);
   }
@@ -1280,6 +1297,7 @@ export async function collectReportChatResponse(
   let responseText = "";
   let waitingForInput = Boolean(target.inputItemId);
   let consumedInputItemId = target.inputItemId;
+  const knownItemIds = target.knownItemIds ?? new Set<string>();
 
   for await (const event of parseSseStream(stream)) {
     if (waitingForInput) {
@@ -1294,7 +1312,12 @@ export async function collectReportChatResponse(
     }
 
     const eventResponseId = streamEventResponseId(event);
-    if (activeResponseId === null && eventResponseId !== null) {
+    if (isKnownReportChatItem(event, knownItemIds)) continue;
+    if (
+      activeResponseId === null &&
+      eventResponseId !== null &&
+      event.type !== "response_completed"
+    ) {
       activeResponseId = eventResponseId;
     }
     if (
@@ -1319,17 +1342,27 @@ export async function collectReportChatResponse(
       continue;
     }
     if (event.type === "response_completed") {
-      const finalText = reportChatContentText(event.response.output);
+      const finalText =
+        target.afterItemId === undefined && knownItemIds.size === 0
+          ? reportChatContentText(event.response.output)
+          : "";
       if (!responseText && finalText) {
         responseText = finalText;
         onDelta?.(responseText);
       }
-      controller.abort();
-      if (responseText.trim()) return responseText.trim();
-      return (
-        (await fetchReportChatLatestResponseWithRetry(sessionId, consumedInputItemId)) ??
-        "No response returned."
+      if (responseText.trim()) {
+        controller.abort();
+        return responseText.trim();
+      }
+      const fetched = await fetchReportChatLatestResponseWithRetry(
+        sessionId,
+        consumedInputItemId ?? target.afterItemId,
       );
+      if (fetched !== undefined) {
+        controller.abort();
+        return fetched;
+      }
+      continue;
     }
     if (event.type === "response_failed") {
       throw new Error(event.response.error?.message ?? "Report chat failed.");
@@ -1349,9 +1382,20 @@ export async function collectReportChatResponse(
 
   if (responseText.trim()) return responseText.trim();
   return (
-    (await fetchReportChatLatestResponseWithRetry(sessionId, consumedInputItemId)) ??
+    (await fetchReportChatLatestResponseWithRetry(
+      sessionId,
+      consumedInputItemId ?? target.afterItemId,
+    )) ??
     "No response returned."
   );
+}
+
+function isKnownReportChatItem(event: StreamEvent, knownItemIds: Set<string>): boolean {
+  if (knownItemIds.size === 0) return false;
+  if ("itemId" in event && typeof event.itemId === "string" && knownItemIds.has(event.itemId)) {
+    return true;
+  }
+  return false;
 }
 
 function matchingReportChatInputItemId(
@@ -1396,6 +1440,18 @@ export function reportChatContentText(content: unknown): string {
   return reportChatContentText(record.output);
 }
 
+async function fetchReportChatHistoryAnchor(sessionId: string): Promise<ReportChatHistoryAnchor> {
+  try {
+    const page = await fetchSessionItemsPage(sessionId, { limit: 24 });
+    return {
+      afterItemId: page.items.at(-1)?.id,
+      knownItemIds: new Set(page.items.map((item) => item.id)),
+    };
+  } catch {
+    return { knownItemIds: new Set() };
+  }
+}
+
 async function fetchReportChatLatestResponseWithRetry(
   sessionId: string,
   afterItemId?: string,
@@ -1418,10 +1474,12 @@ async function fetchReportChatLatestResponse(
 ): Promise<string | undefined> {
   try {
     const page = await fetchSessionItemsPage(sessionId, { limit: 12 });
-    const items =
-      afterItemId === undefined
-        ? page.items
-        : page.items.slice(page.items.findIndex((item) => item.id === afterItemId) + 1);
+    let items = page.items;
+    if (afterItemId !== undefined) {
+      const afterIndex = page.items.findIndex((item) => item.id === afterItemId);
+      if (afterIndex === -1) return undefined;
+      items = page.items.slice(afterIndex + 1);
+    }
     for (const item of [...items].reverse()) {
       const text = extractAssistantText(item);
       if (text !== undefined) return text;
