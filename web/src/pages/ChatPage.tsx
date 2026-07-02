@@ -1239,7 +1239,7 @@ async function sendReportChatMessage(
   }
 }
 
-const REPORT_CHAT_RESPONSE_TIMEOUT_MS = 60_000;
+const REPORT_CHAT_RESPONSE_TIMEOUT_MS = 15_000;
 
 interface ReportChatHistoryAnchor {
   afterItemId?: string;
@@ -1354,15 +1354,25 @@ export async function collectReportChatResponse(
         controller.abort();
         return responseText.trim();
       }
+      continue;
+    }
+    if (
+      event.type === "session_status" &&
+      event.conversationId === sessionId &&
+      (event.status === "idle" || event.status === "failed")
+    ) {
+      if (responseText.trim()) {
+        controller.abort();
+        return responseText.trim();
+      }
       const fetched = await fetchReportChatLatestResponseWithRetry(
         sessionId,
         consumedInputItemId ?? target.afterItemId,
       );
-      if (fetched !== undefined) {
-        controller.abort();
-        return fetched;
-      }
-      continue;
+      controller.abort();
+      if (fetched !== undefined) return fetched;
+      if (event.status === "failed") throw new Error("Report chat failed.");
+      return "No response returned.";
     }
     if (event.type === "response_failed") {
       throw new Error(event.response.error?.message ?? "Report chat failed.");

@@ -160,6 +160,35 @@ describe("report chat response extraction", () => {
     expect(result).toBe("Fresh follow-up.");
   });
 
+  it("waits past an empty completion for the committed answer item", async () => {
+    const controller = new AbortController();
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_new",
+            status: "completed",
+            output: [],
+          },
+        }),
+        sseEvent("response.output_item.done", {
+          item: {
+            id: "msg_new",
+            type: "message",
+            response_id: "resp_new",
+            content: [{ type: "output_text", text: "Delayed committed answer." }],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      { afterItemId: "msg_old", knownItemIds: new Set(["msg_old"]) },
+    );
+
+    expect(result).toBe("Delayed committed answer.");
+  });
+
   it("keeps answer content when the consumed event was missed", async () => {
     const controller = new AbortController();
     const result = await collectReportChatResponse(
