@@ -1,7 +1,14 @@
 import { createContext, useContext } from "react";
 import type { ReportOutput, ReportSection } from "./reportOutput";
 
-export type ReportChatHandler = (message: string) => void;
+export interface ReportChatRequest {
+  threadKey: string;
+  title: string;
+  message: string;
+  onDelta?: (text: string) => void;
+}
+
+export type ReportChatHandler = (request: ReportChatRequest) => Promise<string>;
 
 const ReportChatContext = createContext<ReportChatHandler | null>(null);
 

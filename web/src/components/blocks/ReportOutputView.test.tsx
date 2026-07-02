@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ReportChatProvider } from "./ReportChatContext";
+import { ReportChatProvider, type ReportChatRequest } from "./ReportChatContext";
 import { ReportOutputView } from "./ReportOutputView";
 import type { ReportOutput } from "./reportOutput";
 
@@ -152,8 +152,11 @@ describe("ReportOutputView", () => {
     expect(screen.queryByTestId("report-section-dialog")).toBeNull();
   });
 
-  it("sends section questions with selected text to the chat context", () => {
-    const onReportChat = vi.fn();
+  it("keeps section chat inside the modal and sends questions with Enter", async () => {
+    const onReportChat = vi.fn(async (request: ReportChatRequest) => {
+      request.onDelta?.("It points at the fallback model.");
+      return "It points at the fallback model.";
+    });
     const selectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
       toString: () => "deepseek-chat",
     } as unknown as Selection);
@@ -166,18 +169,42 @@ describe("ReportOutputView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Hardcoded DeepSeek/i }));
     fireEvent.mouseUp(screen.getByTestId("report-section-content"));
-    fireEvent.change(screen.getByLabelText("Question about report section"), {
+    const textarea = screen.getByLabelText("Question about report section");
+    fireEvent.change(textarea, {
       target: { value: "Why does this matter?" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+    expect(onReportChat).not.toHaveBeenCalled();
 
-    expect(onReportChat).toHaveBeenCalledTimes(1);
-    expect(onReportChat.mock.calls[0]?.[0]).toContain("Report: LLM Impact Radar Report");
-    expect(onReportChat.mock.calls[0]?.[0]).toContain("Section: Hardcoded DeepSeek Chat Model");
-    expect(onReportChat.mock.calls[0]?.[0]).toContain("Selected text:\ndeepseek-chat");
-    expect(onReportChat.mock.calls[0]?.[0]).toContain("Question:\nWhy does this matter?");
-    expect(onReportChat.mock.calls[0]?.[0]).toContain("deepseek-chat");
-    expect(screen.getByTestId("report-section-chat-log")).toBeDefined();
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(onReportChat).toHaveBeenCalledTimes(1));
+    const request = onReportChat.mock.calls[0]?.[0];
+    if (!request) throw new Error("Expected report chat request");
+    expect(request.message).toContain("Report: LLM Impact Radar Report");
+    expect(request.message).toContain("Section: Hardcoded DeepSeek Chat Model");
+    expect(request.message).toContain("Selected text:\ndeepseek-chat");
+    expect(request.message).toContain("Question:\nWhy does this matter?");
+    expect(request.threadKey).toContain("code-impact-chat-default");
+    const chatLog = screen.getByTestId("report-section-chat-log");
+    expect(within(chatLog).getByText("Why does this matter?")).toBeDefined();
+    expect(within(chatLog).getByText("It points at the fallback model.")).toBeDefined();
+
+    fireEvent.click(
+      within(screen.getByTestId("report-section-dialog")).getByRole("button", { name: "Close" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
+    expect(
+      within(screen.getByTestId("report-section-chat-log")).queryByText("Why does this matter?"),
+    ).toBeNull();
+
+    fireEvent.click(
+      within(screen.getByTestId("report-section-dialog")).getByRole("button", { name: "Close" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Hardcoded DeepSeek/i }));
+    expect(
+      within(screen.getByTestId("report-section-chat-log")).getByText("Why does this matter?"),
+    ).toBeDefined();
     selectionSpy.mockRestore();
   });
 });

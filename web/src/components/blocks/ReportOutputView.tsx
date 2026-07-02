@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import {
   ActivityIcon,
   BarChart3Icon,
@@ -93,9 +101,13 @@ const REPORT_BRAND_PATTERN = /\bConduct\s+Omnigent\b/gi;
 
 type ReportDialogMessage = {
   id: string;
-  question: string;
+  role: "user" | "assistant";
+  content: string;
   quote: string | null;
+  status?: "sending" | "streaming" | "done" | "error";
 };
+
+type ReportDialogMessagePatch = Partial<Pick<ReportDialogMessage, "content" | "status">>;
 
 interface ReportOutputViewProps {
   report: ReportOutput;
@@ -106,7 +118,9 @@ interface ReportOutputViewProps {
 export function ReportOutputView({ report, isStreaming = false }: ReportOutputViewProps) {
   const [activeId, setActiveId] = useState(report.sections[0]?.id ?? "");
   const [detailOpen, setDetailOpen] = useState(false);
+  const [chatHistories, setChatHistories] = useState<Record<string, ReportDialogMessage[]>>({});
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const chatMessageIdRef = useRef(0);
   const reportChat = useReportChat();
 
   const activeSection =
@@ -163,6 +177,31 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
   function openSection(sectionId: string) {
     setActiveId(sectionId);
     setDetailOpen(true);
+  }
+
+  function nextChatMessageId(sectionId: string): string {
+    chatMessageIdRef.current += 1;
+    return `${sectionId}-${chatMessageIdRef.current}`;
+  }
+
+  function appendChatMessages(sectionId: string, messages: ReportDialogMessage[]) {
+    setChatHistories((prev) => ({
+      ...prev,
+      [sectionId]: [...(prev[sectionId] ?? []), ...messages],
+    }));
+  }
+
+  function updateChatMessage(
+    sectionId: string,
+    messageId: string,
+    patch: ReportDialogMessagePatch,
+  ) {
+    setChatHistories((prev) => ({
+      ...prev,
+      [sectionId]: (prev[sectionId] ?? []).map((message) =>
+        message.id === messageId ? { ...message, ...patch } : message,
+      ),
+    }));
   }
 
   return (
@@ -277,6 +316,12 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
           open={detailOpen}
           onOpenChange={setDetailOpen}
           reportChat={reportChat}
+          messages={chatHistories[activeSection.id] ?? []}
+          nextMessageId={() => nextChatMessageId(activeSection.id)}
+          appendMessages={(messages) => appendChatMessages(activeSection.id, messages)}
+          updateMessage={(messageId, patch) =>
+            updateChatMessage(activeSection.id, messageId, patch)
+          }
         />
       )}
     </section>
@@ -290,6 +335,10 @@ function ReportSectionDialog({
   open,
   onOpenChange,
   reportChat,
+  messages,
+  nextMessageId,
+  appendMessages,
+  updateMessage,
 }: {
   report: ReportOutput;
   reportTitle: string;
@@ -297,21 +346,38 @@ function ReportSectionDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   reportChat: ReportChatHandler | null;
+  messages: ReportDialogMessage[];
+  nextMessageId: () => string;
+  appendMessages: (messages: ReportDialogMessage[]) => void;
+  updateMessage: (messageId: string, patch: ReportDialogMessagePatch) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [quotedText, setQuotedText] = useState("");
-  const [messages, setMessages] = useState<ReportDialogMessage[]>([]);
+  const chatLogRef = useRef<HTMLDivElement>(null);
   const sanitizedReport = useMemo(
     () => ({ ...report, title: reportTitle, target: sanitizeReportTarget(report.target) }),
     [report, reportTitle],
   );
   const sanitizedSection = useMemo(() => sanitizeReportSection(section), [section]);
+  const isSending = messages.some(
+    (message) => message.status === "sending" || message.status === "streaming",
+  );
 
   useEffect(() => {
     setDraft("");
     setQuotedText("");
-    setMessages([]);
   }, [section.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    const log = chatLogRef.current;
+    if (!log) return;
+    if (typeof log.scrollTo === "function") {
+      log.scrollTo({ top: log.scrollHeight, behavior: "smooth" });
+    } else {
+      log.scrollTop = log.scrollHeight;
+    }
+  }, [messages, open]);
 
   function captureSelection() {
     const selection = selectedReportText();
@@ -321,20 +387,66 @@ function ReportSectionDialog({
   function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const question = cleanReportText(draft);
-    if (!question || !reportChat) return;
+    if (!question || !reportChat || isSending) return;
 
     const quote = quotedText || null;
-    reportChat(buildReportSectionQuestion(sanitizedReport, sanitizedSection, question, quote));
-    setMessages((prev) => [
-      ...prev,
+    const userMessageId = nextMessageId();
+    const responseMessageId = nextMessageId();
+    appendMessages([
       {
-        id: `${section.id}-${prev.length}`,
-        question,
+        id: userMessageId,
+        role: "user",
+        content: question,
         quote,
+      },
+      {
+        id: responseMessageId,
+        role: "assistant",
+        content: "",
+        quote: null,
+        status: "sending",
       },
     ]);
     setDraft("");
     setQuotedText("");
+    void sendQuestion(question, quote, responseMessageId, reportChat);
+  }
+
+  async function sendQuestion(
+    question: string,
+    quote: string | null,
+    responseMessageId: string,
+    chat: ReportChatHandler,
+  ): Promise<void> {
+    const message = buildReportSectionQuestion(sanitizedReport, sanitizedSection, question, quote);
+    try {
+      const response = await chat({
+        threadKey: buildReportChatThreadKey(sanitizedReport, sanitizedSection),
+        title: cleanReportText(sanitizedSection.title, "Report section"),
+        message,
+        onDelta: (text) => {
+          updateMessage(responseMessageId, {
+            content: cleanReportText(text),
+            status: "streaming",
+          });
+        },
+      });
+      updateMessage(responseMessageId, {
+        content: cleanReportText(response, "No response returned."),
+        status: "done",
+      });
+    } catch (error) {
+      updateMessage(responseMessageId, {
+        content: error instanceof Error ? error.message : "The report chat failed.",
+        status: "error",
+      });
+    }
+  }
+
+  function handleDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
   }
 
   return (
@@ -386,22 +498,42 @@ function ReportSectionDialog({
               <h5 className="font-medium text-sm">Chat</h5>
             </div>
             <div
-              className="mt-3 max-h-48 min-h-28 overflow-y-auto rounded-lg border border-border/70 bg-card/55 p-3"
+              ref={chatLogRef}
+              className="mt-3 max-h-72 min-h-32 overflow-y-auto rounded-lg border border-border/70 bg-card/55 p-3 sm:max-h-80"
               data-testid="report-section-chat-log"
               onMouseUp={captureSelection}
+              aria-live="polite"
             >
               {messages.length === 0 ? (
                 <p className="text-muted-foreground text-sm">No questions yet</p>
               ) : (
                 <div className="space-y-3">
                   {messages.map((message) => (
-                    <div key={message.id} className="rounded-lg bg-background/70 p-3">
+                    <div
+                      key={message.id}
+                      className={cn(
+                        "rounded-lg p-3",
+                        message.role === "assistant" ? "bg-background/70" : "bg-brand-accent/10",
+                      )}
+                    >
+                      <span className="mb-1 block font-medium text-muted-foreground text-xs">
+                        {message.role === "assistant" ? "Response" : "You"}
+                      </span>
                       {message.quote && (
                         <blockquote className="mb-2 border-brand-accent/60 border-l-2 pl-2 text-muted-foreground text-xs leading-5">
                           {message.quote}
                         </blockquote>
                       )}
-                      <p className="whitespace-pre-wrap text-sm leading-6">{message.question}</p>
+                      <p className="whitespace-pre-wrap text-sm leading-6">
+                        {message.content ||
+                          (message.status === "sending" ? "Thinking..." : "Waiting for response")}
+                      </p>
+                      {(message.status === "sending" || message.status === "streaming") && (
+                        <span className="mt-2 inline-flex items-center gap-1 text-muted-foreground text-xs">
+                          <ActivityIcon className="size-3 motion-safe:animate-pulse" />
+                          {message.status === "sending" ? "Sending" : "Responding"}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -436,11 +568,12 @@ function ReportSectionDialog({
                 placeholder="Ask about this section"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={handleDraftKeyDown}
               />
               <Button
                 type="submit"
                 className="sm:self-end"
-                disabled={!reportChat || cleanReportText(draft).length === 0}
+                disabled={!reportChat || isSending || cleanReportText(draft).length === 0}
               >
                 Ask
               </Button>
@@ -1042,6 +1175,11 @@ function buildReportSectionQuestion(
   ]
     .filter((line): line is string => line !== null)
     .join("\n\n");
+}
+
+function buildReportChatThreadKey(report: ReportOutput, section: ReportSection): string {
+  const reportKey = cleanReportText(report.run_id || report.generated_at || report.title, "report");
+  return `${reportKey}:${section.id}`;
 }
 
 function selectedReportText(): string {
