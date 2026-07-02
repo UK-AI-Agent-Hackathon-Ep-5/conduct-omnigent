@@ -1,0 +1,58 @@
+{
+  "schema_version": "0.1",
+  "artifact_type": "external_llm_api_research",
+  "research_timestamp": "2026-07-02T12:00:00Z",
+  "source_policy": "Use official provider documentation when available; include source URLs and confidence for every model fact.",
+  "models": [
+    {
+      "provider": "openai",
+      "model_name": "gpt-4o",
+      "status": "active",
+      "api_compatibility": "compatible",
+      "input_price_per_1m": 5.0,
+      "output_price_per_1m": 15.0,
+      "context_window_tokens": 128000,
+      "replacement_models": ["gpt-4.1", "gpt-4o-mini"],
+      "migration_notes": "Check workload quality before moving customer-facing assistant traffic to a cheaper replacement.",
+      "source_urls": [
+        "https://platform.openai.com/docs/pricing",
+        "https://platform.openai.com/docs/models"
+      ],
+      "confidence": "high",
+      "last_verified_at": "2026-07-02T12:00:00Z"
+    },
+    {
+      "provider": "openai",
+      "model_name": "gpt-3.5-turbo",
+      "status": "deprecated",
+      "api_compatibility": "requires_migration",
+      "input_price_per_1m": null,
+      "output_price_per_1m": null,
+      "context_window_tokens": null,
+      "replacement_models": ["gpt-4o-mini"],
+      "migration_notes": "Legacy summarizer should be prioritized because the model is no longer a safe long-term dependency.",
+      "source_urls": [
+        "https://platform.openai.com/docs/models"
+      ],
+      "confidence": "medium",
+      "last_verified_at": "2026-07-02T12:00:00Z"
+    },
+    {
+      "provider": "gemini",
+      "model_name": "gemini-1.5-pro",
+      "status": "active",
+      "api_compatibility": "provider_specific_review_required",
+      "input_price_per_1m": 1.25,
+      "output_price_per_1m": 5.0,
+      "context_window_tokens": 2000000,
+      "replacement_models": ["gemini-2.5-pro"],
+      "migration_notes": "Validate SDK and safety-setting compatibility before upgrading long-document analysis.",
+      "source_urls": [
+        "https://ai.google.dev/gemini-api/docs/pricing",
+        "https://ai.google.dev/gemini-api/docs/models"
+      ],
+      "confidence": "medium",
+      "last_verified_at": "2026-07-02T12:00:00Z"
+    }
+  ]
+}
