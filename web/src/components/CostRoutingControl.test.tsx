@@ -173,7 +173,7 @@ describe("IntelligentModelControl — toggle semantics", () => {
   });
 
   it("renders the lit router glyph monochrome — currentColor, no gradient defs", () => {
-    // The lit glyph inherits the toggle's foreground color (brand pink when
+    // The lit glyph inherits the toggle's foreground color (brand orange when
     // on); blue stays semantic elsewhere in the composer.
     const { container } = renderControl({ value: "on" });
     const litSvg = container.querySelector(".imc-layer-on svg");

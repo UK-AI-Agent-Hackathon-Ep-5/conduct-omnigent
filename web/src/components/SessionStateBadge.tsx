@@ -41,7 +41,7 @@ function describe(state: SessionState): Visual {
         render: () => <RunningDot />,
       };
     case "unseen":
-      // Solid brand-pink dot — distinguished from the running indicator,
+      // Solid brand-orange dot, distinguished from the running indicator,
       // which is a grey spinner.
       return {
         kind: state.kind,

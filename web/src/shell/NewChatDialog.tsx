@@ -2594,9 +2594,12 @@ export function NewChatLandingScreen() {
           keeps the composer from feeling cramped against the viewport
           edges; widens to the full px-10 at the md breakpoint and up. */}
       <div className="flex w-full max-w-[840px] flex-col items-center gap-8 px-4 pt-8 pb-16 md:select-none md:px-10">
-        <div className="flex flex-col items-center gap-3.5 sm:flex-row">
-          <OttoEyes className="h-18 w-auto shrink-0" />
-          <h1 className="text-center text-3xl font-medium tracking-[-0.03em] text-foreground sm:text-left">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <OttoEyes className="h-10 w-auto shrink-0 text-foreground" />
+          <p className="font-mono text-[11px] leading-none tracking-[0.12em] text-brand-accent uppercase">
+            Make legacy move
+          </p>
+          <h1 className="text-center text-3xl font-medium tracking-normal text-foreground">
             What should we do?
           </h1>
         </div>
