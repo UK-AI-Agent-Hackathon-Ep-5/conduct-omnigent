@@ -1,0 +1,30 @@
+{
+  "provider": "openai",
+  "snapshot_date": "2026-06-30",
+  "currency": "USD",
+  "unit": "per_1m_tokens",
+  "models": {
+    "gpt-4o": {
+      "input_cost_per_1m": 3.0,
+      "output_cost_per_1m": 12.0,
+      "cached_input_cost_per_1m": 1.5,
+      "context_window": 128000,
+      "status": "active"
+    },
+    "gpt-4o-mini": {
+      "input_cost_per_1m": 0.15,
+      "output_cost_per_1m": 0.6,
+      "cached_input_cost_per_1m": 0.075,
+      "context_window": 128000,
+      "status": "active"
+    },
+    "gpt-3.5-turbo": {
+      "input_cost_per_1m": 0.5,
+      "output_cost_per_1m": 1.5,
+      "context_window": 16385,
+      "status": "deprecated",
+      "shutdown_date": "2026-09-30",
+      "replacement": "gpt-4o-mini"
+    }
+  }
+}

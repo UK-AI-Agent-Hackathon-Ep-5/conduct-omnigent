@@ -1,0 +1,33 @@
+# Maps internal product features to the models they depend on and where the
+# calling code lives. Used to translate a raw API change into product/team impact.
+features:
+  chat_assistant:
+    description: Customer-facing chat assistant (primary revenue surface).
+    owner: assistant-team
+    tier: production
+    models: [gpt-4o]
+    code_paths: [app/assistant/chat.py]
+  autocomplete:
+    description: Inline code/text autocomplete.
+    owner: editor-team
+    tier: production
+    models: [gpt-4o-mini]
+    code_paths: [app/editor/complete.py]
+  legacy_summarizer:
+    description: Batch document summarizer (legacy path).
+    owner: platform-team
+    tier: production
+    models: [gpt-3.5-turbo]
+    code_paths: [app/summarizer/legacy.py]
+  doc_analysis:
+    description: Long-document analysis and extraction.
+    owner: docs-team
+    tier: production
+    models: [gemini-1.5-pro]
+    code_paths: [app/docs/analyze.py]
+  tagging:
+    description: Automatic content tagging.
+    owner: docs-team
+    tier: internal
+    models: [gemini-1.5-flash]
+    code_paths: [app/docs/tagging.py]

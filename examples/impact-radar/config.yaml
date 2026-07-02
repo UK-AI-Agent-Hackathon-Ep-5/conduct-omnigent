@@ -1,0 +1,154 @@
+# LLM Impact Radar — the API-change impact orchestrator.
+#
+# Radar turns an external LLM API change (pricing move, deprecation, migration
+# notice) into internal product/cost/code impact and an evidence-grounded,
+# human-approved report. It is the sibling of Polly (code) and Scribe (docs):
+# Radar orchestrates and authors the report itself, and delegates the specialized
+# work — live research, read-only code scanning, and an independent fact-check —
+# to three sub-agents. It writes a report + artifact directory; it NEVER modifies
+# product code, opens PRs, or creates tickets.
+#
+# Usage:
+#   omnigent run examples/impact-radar -p "Analyze OpenAI + Gemini pricing and
+#     deprecation changes and their impact on ./examples/impact-radar/data/demo_codebase"
+#
+# Setup: this runs on the OpenAI Agents SDK harness. openai-agents treats an
+# *unpinned* model as a Databricks model, so every agent pins `model: gpt-4o` to
+# use your OpenAI / OpenAI-compatible gateway. Configure a credential with
+# `omnigent setup` (an OPENAI_API_KEY, or a gateway/local provider), and set
+# TAVILY_API_KEY for the researcher's live web search (optional — it falls back
+# to a bundled fetcher). Override the model per run with `--model`.
+
+spec_version: 1
+name: impact_radar
+description: >-
+  An LLM API-change impact orchestrator. Radar collects official pricing and
+  deprecation changes (via a research sub-agent), extracts normalized change
+  cards, scans a local codebase for affected LLM API/model usage (via a
+  read-only code-scanner sub-agent), computes cost impact against an internal
+  usage log, drafts an evidence-grounded Markdown report, has it fact-checked by
+  an independent reviewer, and runs a human approval loop. It proposes actions;
+  it never applies them.
+
+executor:
+  type: omnigent
+  model: deepseek-v4-pro
+  # Route to the named `deepseek` provider declared in ~/.omnigent/config.yaml
+  # (kind: gateway, openai family, base_url https://api.deepseek.com). Pinning by
+  # name avoids falling back to whatever the global openai-family default is.
+  auth:
+    type: provider
+    name: deepseek
+  config:
+    harness: openai-agents
+    # Chat vs Responses wire is driven by the provider's `wire_api: chat`
+    # (DeepSeek has no Responses API). Do not set `use_responses` here — the
+    # omnigent config dict stringifies it and "False" reads back as truthy.
+
+async: true
+cancellable: true
+
+# Filesystem + shell access: read the target codebase and data/, run the
+# deterministic scripts, and write artifacts under runs/<run_id>/. `sandbox:
+# none` runs unsandboxed in the caller's working directory (matches the other
+# example bundles and keeps the bundle loadable on macOS).
+os_env:
+  type: caller_process
+  cwd: .
+  sandbox:
+    type: none
+
+# Two layers of guardrail on the human-facing orchestrator:
+#  - blast_radius denies the catastrophic set (force-push, `rm -rf /`, hard-reset
+#    to a remote ref) outright.
+#  - approve_repo_changes is real HUMAN-IN-THE-LOOP: the runtime PAUSES the tool
+#    call and asks you to approve when Radar tries to write a file OUTSIDE runs/
+#    (i.e. touch your actual codebase) or run `git push`. Normal work — reading
+#    code, running `python3 scripts/*`, writing artifacts under runs/ — is never
+#    interrupted. `ask_timeout` gives you a day to answer.
+# (Only on the orchestrator: the sub-agents run headless and cannot answer an
+# ASK, so they stay read-only by prompt + blast_radius.)
+guardrails:
+  ask_timeout: 86400
+  policies:
+    blast_radius:
+      type: function
+      on: [tool_call]
+      function:
+        path: omnigent.inner.nessie.policies.blast_radius
+        arguments:
+          gate_pushes: false
+    approve_repo_changes:
+      type: function
+      on: [tool_call]
+      function:
+        path: omnigent.policies.builtins.cel.cel_policy
+        arguments:
+          reason: "写到 runs/ 以外或执行 git push,需要你批准"
+          expression: |
+            event.type == "tool_call" && (
+              ((event.data.name == "sys_os_write" || event.data.name == "sys_os_edit")
+                && has(event.data.arguments.path)
+                && !(event.data.arguments.path.startsWith("runs/")
+                     || event.data.arguments.path.contains("/runs/")))
+              || (event.data.name == "sys_os_shell"
+                  && has(event.data.arguments.command)
+                  && event.data.arguments.command.contains("git push"))
+            ) ? {"result": "ASK", "reason": "写到 runs/ 以外或 git push,需你批准"}
+              : {"result": "ALLOW"}
+
+# The three specialized sub-agents (see agents/<name>/config.yaml).
+tools:
+  agents:
+    - researcher
+    - code-scanner
+    - reviewer
+
+prompt: |
+  You are LLM Impact Radar. You turn an external LLM API change into internal
+  impact and a human-approved report. Your one hard rule: you produce ANALYSIS
+  and a REPORT — you do NOT modify product code, open pull requests, or create
+  tickets, even after approval. Approved actions are handed back to the human to
+  execute.
+
+  ## Run directory
+
+  Everything for one analysis lives under `runs/<run_id>/` (use a timestamp like
+  `runs/2026-07-01T1530/`). Create it first with your `sys_os_*` tools and write
+  every artifact there. Never write outside it, and never touch the target
+  codebase.
+
+  ## Pipeline (load the skill named at each step)
+
+  1. **Research** (`api-source-research`) — dispatch the `researcher` sub-agent to
+     find official pricing/changelog/deprecation sources and produce
+     `source_cards.json` + `evidence_cards.json`. It is read-only and cites
+     everything. If you were given local pricing snapshots instead, you may skip
+     straight to step 2.
+  2. **Change extraction** (`api-change-extraction`) — run
+     `extract_change_cards.py` on the old/new snapshots to produce
+     `change_cards.json`. The script owns the numbers; do not eyeball diffs.
+  3. **Code impact** (`code-impact-scan`) — dispatch the `code-scanner` sub-agent
+     to run `scan_code.py` against the target codebase and produce
+     `code_impact.json`, mapped to `data/feature_map.yaml`.
+  4. **Cost impact** (`cost-impact`) — run `cost_impact.py` on the usage log to
+     produce `cost_impact.json`.
+  5. **Risk & actions** (`risk-action-plan`) — synthesize the above into
+     `risk_action_plan.json` (proposals only).
+  6. **Report & approval** (`report` + `evidence-citation`) — render `report.md`,
+     validate citations (must pass), have the `reviewer` sub-agent fact-check it,
+     fold in corrections, then run the human approval loop and record decisions in
+     `approval_log.md`.
+
+  ## Discipline
+
+  - Delegate research and code scanning to the sub-agents; collect their results
+    from your inbox with a single read rather than busy-polling — if a sub-agent
+    is still running, end your turn and you will be woken when it finishes.
+  - Every pricing/deprecation fact in the report needs a `[S#]` citation that
+    resolves to an official source card. Numbers in prose must match the JSON
+    artifacts exactly.
+  - Act in the same turn you announce: if you say you will run a script or
+    dispatch a sub-agent, emit those tool calls in the same turn.
+  - The deliverable is `runs/<run_id>/report.md` plus the artifact directory —
+    not a chat summary.

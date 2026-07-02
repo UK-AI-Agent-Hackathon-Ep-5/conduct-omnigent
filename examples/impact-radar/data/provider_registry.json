@@ -1,0 +1,53 @@
+{
+  "_comment": "The query planner's knowledge base. Official domains drive source scoring; seed_pages are the offline fallback the fetcher uses when a search retriever is unavailable; keywords sharpen generated queries. Facets: pricing, changelog, deprecation, migration, rate_limits, model_release.",
+  "providers": {
+    "openai": {
+      "official_domains": ["platform.openai.com", "openai.com", "help.openai.com"],
+      "keywords": ["per 1M tokens", "cached input", "batch", "shutdown", "sunset", "Responses API", "Assistants API"],
+      "seed_pages": {
+        "pricing": ["https://platform.openai.com/docs/pricing"],
+        "changelog": ["https://platform.openai.com/docs/changelog"],
+        "deprecation": ["https://platform.openai.com/docs/deprecations"],
+        "migration": ["https://platform.openai.com/docs/guides/migration"],
+        "rate_limits": ["https://platform.openai.com/docs/guides/rate-limits"],
+        "model_release": ["https://platform.openai.com/docs/models"]
+      }
+    },
+    "anthropic": {
+      "official_domains": ["docs.anthropic.com", "anthropic.com", "support.anthropic.com"],
+      "keywords": ["per million tokens", "prompt caching", "batch", "retired", "sunset", "Messages API"],
+      "seed_pages": {
+        "pricing": ["https://docs.anthropic.com/en/docs/about-claude/pricing"],
+        "changelog": ["https://docs.anthropic.com/en/release-notes/api"],
+        "deprecation": ["https://docs.anthropic.com/en/docs/resources/model-deprecations"],
+        "migration": ["https://docs.anthropic.com/en/docs/resources/model-deprecations"],
+        "rate_limits": ["https://docs.anthropic.com/en/api/rate-limits"],
+        "model_release": ["https://docs.anthropic.com/en/docs/about-claude/models"]
+      }
+    },
+    "gemini": {
+      "official_domains": ["ai.google.dev", "cloud.google.com"],
+      "keywords": ["context caching", "grounding", "batch", "deprecated", "shutdown", "Gemini API"],
+      "seed_pages": {
+        "pricing": ["https://ai.google.dev/gemini-api/docs/pricing"],
+        "changelog": ["https://ai.google.dev/gemini-api/docs/changelog"],
+        "deprecation": ["https://ai.google.dev/gemini-api/docs/deprecations"],
+        "migration": ["https://ai.google.dev/gemini-api/docs/migrate"],
+        "rate_limits": ["https://ai.google.dev/gemini-api/docs/rate-limits"],
+        "model_release": ["https://ai.google.dev/gemini-api/docs/models/gemini"]
+      }
+    },
+    "mistral": {
+      "official_domains": ["docs.mistral.ai", "mistral.ai"],
+      "keywords": ["per 1M tokens", "batch", "deprecated", "legacy", "La Plateforme"],
+      "seed_pages": {
+        "pricing": ["https://mistral.ai/pricing"],
+        "changelog": ["https://docs.mistral.ai/getting-started/changelog/"],
+        "deprecation": ["https://docs.mistral.ai/getting-started/models/models_overview/"],
+        "migration": ["https://docs.mistral.ai/getting-started/models/models_overview/"],
+        "rate_limits": ["https://docs.mistral.ai/deployment/laplateforme/tier/"],
+        "model_release": ["https://docs.mistral.ai/getting-started/models/models_overview/"]
+      }
+    }
+  }
+}

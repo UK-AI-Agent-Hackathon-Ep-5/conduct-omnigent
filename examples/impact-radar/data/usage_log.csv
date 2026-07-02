@@ -1,0 +1,6 @@
+date,provider,model,feature,input_tokens,output_tokens,requests
+2026-06-01,openai,gpt-4o,chat_assistant,120000000,30000000,45000
+2026-06-01,openai,gpt-4o-mini,autocomplete,400000000,50000000,900000
+2026-06-01,openai,gpt-3.5-turbo,legacy_summarizer,80000000,10000000,120000
+2026-06-01,gemini,gemini-1.5-pro,doc_analysis,60000000,8000000,20000
+2026-06-01,gemini,gemini-1.5-flash,tagging,200000000,15000000,500000

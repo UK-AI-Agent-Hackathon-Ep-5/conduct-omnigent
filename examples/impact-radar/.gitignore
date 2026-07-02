@@ -1,0 +1,7 @@
+# Per-run artifact directories are generated output, not source.
+runs/
+__pycache__/
+*.pyc
+
+# Local secrets — never commit real keys.
+.env

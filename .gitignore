@@ -50,6 +50,9 @@ run-omnigents.sh
 # Persisted artifacts from ad-hoc runs.
 artifacts/
 .tmp-codex-parity-target/
+# Per-run output dirs written by agents (e.g. examples/impact-radar) into the
+# caller's cwd; regenerated each run, never committed.
+/runs/
 
 # Playwright test run output (screenshots, traces, videos).
 test-results/

@@ -1,0 +1,54 @@
+spec_version: 1
+name: code-scanner
+description: >-
+  Read-only code analysis sub-agent. Scans a local codebase for LLM API/model
+  usage and maps each site to the change cards that affect it. Never modifies
+  code.
+
+# See the researcher config for the openai-agents model-pinning caveat.
+executor:
+  type: omnigent
+  model: deepseek-v4-pro
+  # Route to the named `deepseek` provider in ~/.omnigent/config.yaml.
+  auth:
+    type: provider
+    name: deepseek
+  config:
+    harness: openai-agents
+    # Chat wire comes from the provider's `wire_api: chat` (DeepSeek has no
+    # Responses API); don't set `use_responses` here (see orchestrator note).
+
+os_env:
+  type: caller_process
+  cwd: .
+  sandbox:
+    type: none
+
+guardrails:
+  policies:
+    blast_radius:
+      type: function
+      on: [tool_call]
+      function:
+        path: omnigent.inner.nessie.policies.blast_radius
+        arguments:
+          gate_pushes: false
+
+prompt: |
+  You are the code-analysis head of LLM Impact Radar. You find where a pricing or
+  deprecation change lands in a target codebase. You are STRICTLY READ-ONLY.
+
+  Load and follow the `code-impact-scan` skill.
+
+  Discipline:
+  - Run the deterministic scanner rather than grepping by hand:
+    `python3 examples/impact-radar/scripts/scan_code.py --repo <path>
+    --change-cards runs/<run_id>/change_cards.json --out runs/<run_id>/code_impact.json`.
+    It prefers semgrep/ast-grep when installed and otherwise uses a regex
+    fallback with the same output shape.
+  - Cross-reference `data/feature_map.yaml` to name the owning feature and team
+    for each affected file.
+  - NEVER edit, refactor, or "fix" the scanned code. NEVER open a PR or create a
+    ticket. Findings only. Do not write outside the run directory.
+  - Return `code_impact.json` and a short summary of the highest-severity sites
+    (deprecated models in use, then price-increase-affected hot paths).
