@@ -222,7 +222,7 @@ describe("BlockRenderer dispatch", () => {
   });
 
   it("renders marked report JSON with the report output view", () => {
-    const reportText = `<!-- REPORT -->${JSON.stringify({
+    const reportText = `REPORT_OUTPUT\n${JSON.stringify({
       report_version: 1,
       run_id: "example-2026-07-02T0900Z",
       generated_at: "2026-07-02T09:00:00Z",
@@ -249,6 +249,35 @@ describe("BlockRenderer dispatch", () => {
     expect(screen.getByTestId("report-output")).toBeDefined();
     expect(screen.getByText("LLM Impact Radar Report")).toBeDefined();
     expect(screen.getAllByText("Providers checked").length).toBeGreaterThan(0);
+  });
+
+  it("renders a report when the marked JSON spans adjacent text items", () => {
+    const reportJson = JSON.stringify({
+      report_version: 1,
+      run_id: "example-2026-07-02T0900Z",
+      generated_at: "2026-07-02T09:00:00Z",
+      title: "Fragmented Report",
+      providers: ["openai"],
+      sections: [
+        {
+          id: "summary-main",
+          type: "executive_summary",
+          title: "Executive Summary",
+          content: "Fragmented text still renders as a report.",
+          severity: "info",
+          data: {},
+        },
+      ],
+    });
+    const items: RenderItem[] = [
+      { kind: "text", itemId: "t1", text: "```json\nREPORT_OUTPUT", final: true },
+      { kind: "text", itemId: "t2", text: `${reportJson}\nEND_REPORT_OUTPUT\n\`\`\``, final: true },
+    ];
+
+    render(<BlockRenderer items={items} sessionStatus="idle" />);
+
+    expect(screen.getByTestId("report-output")).toBeDefined();
+    expect(screen.getByText("Fragmented Report")).toBeDefined();
   });
 
   it("'See N steps' counts the whole tool run, including the streaming tail", () => {
