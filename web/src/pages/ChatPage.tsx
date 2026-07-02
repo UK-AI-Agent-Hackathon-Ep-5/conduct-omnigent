@@ -133,11 +133,13 @@ import { useRefreshSessionStateOnRunnerOnline } from "@/hooks/useSessionOnlineRe
 import {
   bindOnlyOnlineRunner,
   createSession,
+  fetchSessionItemsPage,
   openSessionStream,
   postEvent,
 } from "@/lib/sessionsApi";
 import { parseSseStream } from "@/lib/sse";
 import type { StreamEvent } from "@/lib/events";
+import { extractAssistantText } from "@/lib/lastAssistantText";
 import {
   type LivenessRow,
   type SessionLiveness,
@@ -1194,7 +1196,12 @@ async function sendReportChatMessage(
     if (!streamResponse.ok || !streamResponse.body) {
       throw new Error("Could not open the report chat stream.");
     }
-    const responsePromise = collectReportChatResponse(streamResponse.body, controller, onDelta);
+    const responsePromise = collectReportChatResponse(
+      sessionId,
+      streamResponse.body,
+      controller,
+      onDelta,
+    );
     await postEvent(sessionId, {
       type: "message",
       data: {
@@ -1210,6 +1217,7 @@ async function sendReportChatMessage(
 }
 
 async function collectReportChatResponse(
+  sessionId: string,
   stream: ReadableStream<Uint8Array>,
   controller: AbortController,
   onDelta?: (text: string) => void,
@@ -1250,7 +1258,8 @@ async function collectReportChatResponse(
         onDelta?.(responseText);
       }
       controller.abort();
-      return responseText.trim() || "No response returned.";
+      if (responseText.trim()) return responseText.trim();
+      return (await fetchReportChatLatestResponse(sessionId)) ?? "No response returned.";
     }
     if (event.type === "response_failed") {
       throw new Error(event.response.error?.message ?? "Report chat failed.");
@@ -1268,7 +1277,8 @@ async function collectReportChatResponse(
     }
   }
 
-  return responseText.trim() || "No response returned.";
+  if (responseText.trim()) return responseText.trim();
+  return (await fetchReportChatLatestResponse(sessionId)) ?? "No response returned.";
 }
 
 function streamEventResponseId(event: StreamEvent): string | null {
@@ -1277,17 +1287,37 @@ function streamEventResponseId(event: StreamEvent): string | null {
   return null;
 }
 
-function reportChatContentText(content: Array<Record<string, unknown>> | undefined): string {
+export function reportChatContentText(content: unknown): string {
   if (!content) return "";
-  return content
-    .map((part) => {
-      if (typeof part.text === "string") return part.text;
-      if (typeof part.content === "string") return part.content;
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n")
-    .trim();
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => reportChatContentText(part))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  if (typeof content !== "object") return "";
+
+  const record = content as Record<string, unknown>;
+  const directText = reportChatContentText(record.text);
+  if (directText) return directText;
+  const directContent = reportChatContentText(record.content);
+  if (directContent) return directContent;
+  return reportChatContentText(record.output);
+}
+
+async function fetchReportChatLatestResponse(sessionId: string): Promise<string | undefined> {
+  try {
+    const page = await fetchSessionItemsPage(sessionId, { limit: 12 });
+    for (const item of [...page.items].reverse()) {
+      const text = extractAssistantText(item);
+      if (text !== undefined) return text;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

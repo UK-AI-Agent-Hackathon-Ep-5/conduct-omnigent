@@ -18,6 +18,7 @@ import {
   mergePendingBubbles,
   readOnlyReasonForSessionLabels,
   reorderCommittedRequestElicitations,
+  reportChatContentText,
   shouldSendInitialPrompt,
   shouldShowAuthorBadge,
   shouldShowWorkingIndicator,
@@ -39,6 +40,22 @@ function composerState(permissionLevel: number | null) {
   const canSubmit = !isReadOnly;
   return { isReadOnly, canType, canSubmit };
 }
+
+describe("report chat response extraction", () => {
+  it("reads nested response output text", () => {
+    expect(
+      reportChatContentText([
+        {
+          type: "message",
+          content: [
+            { type: "output_text", text: "First point." },
+            { type: "output_text", text: "Second point." },
+          ],
+        },
+      ]),
+    ).toBe("First point.\nSecond point.");
+  });
+});
 
 describe("Composer permission gating", () => {
   it("read-only (level 1) disables textarea and submit", () => {
