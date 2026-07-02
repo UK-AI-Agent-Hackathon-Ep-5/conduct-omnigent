@@ -54,7 +54,7 @@ import {
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { ElicitationCard } from "@/components/blocks/ApprovalCard";
 import { BlockRenderer, FilePathAwareMessageResponse } from "@/components/blocks/BlockRenderer";
-import { ReportChatProvider } from "@/components/blocks/ReportChatContext";
+import { ReportChatProvider, type ReportChatRequest } from "@/components/blocks/ReportChatContext";
 import { containsReportOutput } from "@/components/blocks/reportOutput";
 import { CompactionMarker, RoutingDecisionChip } from "@/components/blocks/StatusBlocks";
 import { SystemMessageView } from "@/components/blocks/SystemMessage";
@@ -130,6 +130,17 @@ export type { MentionItem, MentionState };
 import { useSession } from "@/hooks/useSession";
 import { useSessionRunnerOnline } from "@/hooks/RunnerHealthProvider";
 import { useRefreshSessionStateOnRunnerOnline } from "@/hooks/useSessionOnlineRefresh";
+import {
+  bindOnlyOnlineRunner,
+  createSession,
+  fetchSessionItemsPage,
+  openSessionStream,
+  postEvent,
+  updateSession,
+} from "@/lib/sessionsApi";
+import { parseSseStream } from "@/lib/sse";
+import type { StreamEvent } from "@/lib/events";
+import { extractAssistantText } from "@/lib/lastAssistantText";
 import {
   type LivenessRow,
   type SessionLiveness,
@@ -1138,6 +1149,188 @@ interface SessionLayoutProps {
   mainAgent: React.ReactNode;
 }
 
+interface ReportChatSessionArgs {
+  agentId: string;
+  sourceSessionId: string;
+  request: ReportChatRequest;
+  sessions: Map<string, string>;
+}
+
+async function ensureReportChatSession({
+  agentId,
+  sourceSessionId,
+  request,
+  sessions,
+}: ReportChatSessionArgs): Promise<string> {
+  const sessionKey = `${sourceSessionId}:${request.threadKey}`;
+  const existingSessionId = sessions.get(sessionKey);
+  if (existingSessionId) return existingSessionId;
+
+  const session = await createSession(agentId, [], {
+    subAgentName: null,
+    title: reportChatSessionTitle(request.title),
+    labels: {
+      "omnigent.report_chat": "true",
+      "omnigent.report_chat.source_session_id": sourceSessionId,
+      "omnigent.report_chat.thread_key": request.threadKey,
+    },
+    costControlModeOverride: "off",
+  });
+  try {
+    await updateSession(session.id, { archived: true, silent: true });
+  } catch {
+    // The chat still works if archiving the helper session fails.
+  }
+  if (!session.runnerId) {
+    const rebound = await bindOnlyOnlineRunner(session.id);
+    if (rebound === null) {
+      throw new Error("No online runner is available for report chat.");
+    }
+  }
+  sessions.set(sessionKey, session.id);
+  return session.id;
+}
+
+function reportChatSessionTitle(title: string): string {
+  const cleanTitle = title.replace(/\s+/g, " ").trim();
+  return `report-chat:${cleanTitle.slice(0, 80) || "section"}`;
+}
+
+async function sendReportChatMessage(
+  sessionId: string,
+  message: string,
+  onDelta?: (text: string) => void,
+): Promise<string> {
+  const controller = new AbortController();
+  try {
+    const streamResponse = await openSessionStream(sessionId, controller.signal, { idle: true });
+    if (!streamResponse.ok || !streamResponse.body) {
+      throw new Error("Could not open the report chat stream.");
+    }
+    const responsePromise = collectReportChatResponse(
+      sessionId,
+      streamResponse.body,
+      controller,
+      onDelta,
+    );
+    await postEvent(sessionId, {
+      type: "message",
+      data: {
+        role: "user",
+        content: [{ type: "input_text", text: message }],
+      },
+    });
+    return await responsePromise;
+  } catch (error) {
+    controller.abort();
+    throw error;
+  }
+}
+
+async function collectReportChatResponse(
+  sessionId: string,
+  stream: ReadableStream<Uint8Array>,
+  controller: AbortController,
+  onDelta?: (text: string) => void,
+): Promise<string> {
+  let activeResponseId: string | null = null;
+  let responseText = "";
+
+  for await (const event of parseSseStream(stream)) {
+    const eventResponseId = streamEventResponseId(event);
+    if (activeResponseId === null && eventResponseId !== null) {
+      activeResponseId = eventResponseId;
+    }
+    if (
+      activeResponseId !== null &&
+      eventResponseId !== null &&
+      eventResponseId !== activeResponseId
+    ) {
+      continue;
+    }
+
+    if (event.type === "text_delta") {
+      responseText += event.delta;
+      onDelta?.(responseText);
+      continue;
+    }
+    if (event.type === "message_done") {
+      const finalText = reportChatContentText(event.content);
+      if (finalText) {
+        responseText = finalText;
+        onDelta?.(responseText);
+      }
+      continue;
+    }
+    if (event.type === "response_completed") {
+      const finalText = reportChatContentText(event.response.output);
+      if (!responseText && finalText) {
+        responseText = finalText;
+        onDelta?.(responseText);
+      }
+      controller.abort();
+      if (responseText.trim()) return responseText.trim();
+      return (await fetchReportChatLatestResponse(sessionId)) ?? "No response returned.";
+    }
+    if (event.type === "response_failed") {
+      throw new Error(event.response.error?.message ?? "Report chat failed.");
+    }
+    if (event.type === "response_incomplete") {
+      throw new Error(
+        event.response.incompleteDetails?.reason ?? event.reason ?? "Report chat stopped early.",
+      );
+    }
+    if (event.type === "response_cancelled") {
+      throw new Error("Report chat was cancelled.");
+    }
+    if (event.type === "error") {
+      throw new Error(event.error.message);
+    }
+  }
+
+  if (responseText.trim()) return responseText.trim();
+  return (await fetchReportChatLatestResponse(sessionId)) ?? "No response returned.";
+}
+
+function streamEventResponseId(event: StreamEvent): string | null {
+  if ("response" in event) return event.response.id;
+  if ("responseId" in event && typeof event.responseId === "string") return event.responseId;
+  return null;
+}
+
+export function reportChatContentText(content: unknown): string {
+  if (!content) return "";
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => reportChatContentText(part))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  if (typeof content !== "object") return "";
+
+  const record = content as Record<string, unknown>;
+  const directText = reportChatContentText(record.text);
+  if (directText) return directText;
+  const directContent = reportChatContentText(record.content);
+  if (directContent) return directContent;
+  return reportChatContentText(record.output);
+}
+
+async function fetchReportChatLatestResponse(sessionId: string): Promise<string | undefined> {
+  try {
+    const page = await fetchSessionItemsPage(sessionId, { limit: 12 });
+    for (const item of [...page.items].reverse()) {
+      const text = extractAssistantText(item);
+      if (text !== undefined) return text;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Inside a conversation: wraps the chat surface. The terminals panel
  * and right rail are managed by AppShell and rendered outside this
@@ -1456,9 +1649,26 @@ function MainAgentSurface({
 
   // Active reply quotes — each "Reply ↵" click appends; consumed by Composer.
   const [replyQuotes, setReplyQuotes] = useState<string[]>([]);
-  const handleReportChat = useCallback((quote: string) => {
-    setReplyQuotes((prev) => [...prev, quote]);
-  }, []);
+  const reportChatSessionsRef = useRef<Map<string, string>>(new Map());
+  const handleReportChat = useCallback(
+    async (request: ReportChatRequest) => {
+      const sourceSessionId = conversationId ?? useChatStore.getState().conversationId;
+      if (!sourceSessionId) {
+        throw new Error("Open a report session before using report chat.");
+      }
+      if (!selectedAgentId) {
+        throw new Error("No agent is available for report chat.");
+      }
+      const sessionId = await ensureReportChatSession({
+        agentId: selectedAgentId,
+        sourceSessionId,
+        request,
+        sessions: reportChatSessionsRef.current,
+      });
+      return sendReportChatMessage(sessionId, request.message, request.onDelta);
+    },
+    [conversationId, selectedAgentId],
+  );
 
   // Ref forwarded to SelectionPopup to scope selection detection to the
   // conversation area, preventing selections in the composer from triggering

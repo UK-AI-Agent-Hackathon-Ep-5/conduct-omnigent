@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ReportChatProvider } from "./ReportChatContext";
+import { ReportChatProvider, type ReportChatRequest } from "./ReportChatContext";
 import { ReportOutputView } from "./ReportOutputView";
 import type { ReportOutput } from "./reportOutput";
 
@@ -56,14 +56,76 @@ const REPORT: ReportOutput = {
 };
 
 describe("ReportOutputView", () => {
-  it("renders a horizontal section preview strip and the first section detail", () => {
+  it("renders a horizontal section preview strip without inline detail", () => {
     render(<ReportOutputView report={REPORT} enablePixi={false} />);
 
     expect(screen.getByTestId("report-output")).toBeDefined();
     expect(screen.getByTestId("report-section-strip")).toBeDefined();
     expect(screen.getByText("LLM Impact Radar Report")).toBeDefined();
     expect(screen.getAllByText("Providers checked").length).toBeGreaterThan(0);
-    expect(screen.getByText("Recommended P0 actions")).toBeDefined();
+    expect(screen.queryByTestId("report-section-detail")).toBeNull();
+  });
+
+  it("keeps the generated report free of the product brand label", () => {
+    const brand = ["Conduct", "Omnigent"].join(" ");
+
+    render(
+      <ReportOutputView
+        report={{
+          ...REPORT,
+          title: `${brand} LLM Impact Radar Report`,
+          target: { name: `${brand} Example Project` },
+          providers: ["openai", brand],
+          sections: [
+            {
+              ...REPORT.sections[0]!,
+              title: `${brand} Executive Summary`,
+              content: `${brand} should stay out of this report.`,
+            },
+          ],
+        }}
+        enablePixi={false}
+      />,
+    );
+
+    expect(screen.queryByText(new RegExp(brand, "i"))).toBeNull();
+    expect(screen.getByText("LLM Impact Radar Report")).toBeDefined();
+    expect(screen.getAllByText("Executive Summary").length).toBeGreaterThan(0);
+    expect(screen.queryByText(["Top", "Signal"].join(" "))).toBeNull();
+  });
+
+  it("scrolls the section preview strip from wheel input", () => {
+    render(<ReportOutputView report={REPORT} enablePixi={false} />);
+
+    const strip = screen.getByTestId("report-section-strip");
+    Object.defineProperty(strip, "clientWidth", { configurable: true, value: 320 });
+    Object.defineProperty(strip, "scrollWidth", { configurable: true, value: 960 });
+    const scrollTo = vi.fn((options: ScrollToOptions) => {
+      strip.scrollLeft = Number(options.left ?? 0);
+    });
+    Object.defineProperty(strip, "scrollTo", { configurable: true, value: scrollTo });
+
+    fireEvent.wheel(strip, { deltaY: 180 });
+
+    expect(scrollTo).toHaveBeenCalledWith({ left: 180, behavior: "smooth" });
+    expect(strip.scrollLeft).toBe(180);
+    expect(strip.className).not.toContain("snap");
+  });
+
+  it("keeps completed sections visible and shows the incoming section loader", () => {
+    render(
+      <ReportOutputView
+        report={{ ...REPORT, sections: [REPORT.sections[0]!] }}
+        enablePixi={false}
+        isStreaming
+      />,
+    );
+
+    expect(screen.getByText("Generating report")).toBeDefined();
+    expect(screen.getByText("1 complete sections")).toBeDefined();
+    expect(screen.getAllByText("Executive Summary").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("report-section-loading")).toBeDefined();
+    expect(screen.getByLabelText("Next report section loading")).toBeDefined();
   });
 
   it("switches focus to a selected section and shows cost visualisation", () => {
@@ -71,7 +133,7 @@ describe("ReportOutputView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Summarisation Job Cost Impact/i }));
 
-    const detail = screen.getByTestId("report-section-detail");
+    const detail = screen.getByTestId("report-section-dialog");
     expect(within(detail).getByText("Summarisation Job Cost Impact")).toBeDefined();
     expect(within(detail).getByText("Cost movement")).toBeDefined();
     expect(within(detail).getByText("$42.00")).toBeDefined();
@@ -79,19 +141,26 @@ describe("ReportOutputView", () => {
     expect(within(detail).getByText("$55.50")).toBeDefined();
   });
 
-  it("collapses and expands the active section", () => {
+  it("opens and closes the section modal", () => {
     render(<ReportOutputView report={REPORT} enablePixi={false} />);
 
-    const collapse = screen.getByRole("button", { name: "Collapse report section" });
-    expect(collapse.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
+    const dialog = screen.getByTestId("report-section-dialog");
+    expect(dialog).toBeDefined();
 
-    fireEvent.click(collapse);
-    const expand = screen.getByRole("button", { name: "Expand report section" });
-    expect(expand.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByTestId("report-section-dialog")).toBeNull();
   });
 
-  it("sends the focused section to the chat context", () => {
-    const onReportChat = vi.fn();
+  it("keeps section chat inside the modal and sends questions with Enter", async () => {
+    const onReportChat = vi.fn(async (request: ReportChatRequest) => {
+      request.onDelta?.("It points at the fallback model.");
+      return "It points at the fallback model.";
+    });
+    const selectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
+      toString: () => "deepseek-chat",
+    } as unknown as Selection);
+
     render(
       <ReportChatProvider value={onReportChat}>
         <ReportOutputView report={REPORT} enablePixi={false} />
@@ -99,11 +168,43 @@ describe("ReportOutputView", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Hardcoded DeepSeek/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Ask about section" }));
+    fireEvent.mouseUp(screen.getByTestId("report-section-content"));
+    const textarea = screen.getByLabelText("Question about report section");
+    fireEvent.change(textarea, {
+      target: { value: "Why does this matter?" },
+    });
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+    expect(onReportChat).not.toHaveBeenCalled();
 
-    expect(onReportChat).toHaveBeenCalledTimes(1);
-    expect(onReportChat.mock.calls[0]?.[0]).toContain("Report: LLM Impact Radar Report");
-    expect(onReportChat.mock.calls[0]?.[0]).toContain("Section: Hardcoded DeepSeek Chat Model");
-    expect(onReportChat.mock.calls[0]?.[0]).toContain("deepseek-chat");
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(onReportChat).toHaveBeenCalledTimes(1));
+    const request = onReportChat.mock.calls[0]?.[0];
+    if (!request) throw new Error("Expected report chat request");
+    expect(request.message).toContain("Report: LLM Impact Radar Report");
+    expect(request.message).toContain("Section: Hardcoded DeepSeek Chat Model");
+    expect(request.message).toContain("Selected text:\ndeepseek-chat");
+    expect(request.message).toContain("Question:\nWhy does this matter?");
+    expect(request.threadKey).toContain("code-impact-chat-default");
+    const chatLog = screen.getByTestId("report-section-chat-log");
+    expect(within(chatLog).getByText("Why does this matter?")).toBeDefined();
+    expect(within(chatLog).getByText("It points at the fallback model.")).toBeDefined();
+
+    fireEvent.click(
+      within(screen.getByTestId("report-section-dialog")).getByRole("button", { name: "Close" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
+    expect(
+      within(screen.getByTestId("report-section-chat-log")).queryByText("Why does this matter?"),
+    ).toBeNull();
+
+    fireEvent.click(
+      within(screen.getByTestId("report-section-dialog")).getByRole("button", { name: "Close" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Hardcoded DeepSeek/i }));
+    expect(
+      within(screen.getByTestId("report-section-chat-log")).getByText("Why does this matter?"),
+    ).toBeDefined();
+    selectionSpy.mockRestore();
   });
 });

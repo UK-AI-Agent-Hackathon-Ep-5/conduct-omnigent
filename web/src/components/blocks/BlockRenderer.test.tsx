@@ -251,6 +251,39 @@ describe("BlockRenderer dispatch", () => {
     expect(screen.getAllByText("Providers checked").length).toBeGreaterThan(0);
   });
 
+  it("starts the report window while the report JSON is still streaming", () => {
+    const completeSection = {
+      id: "summary-main",
+      type: "executive_summary",
+      title: "Executive Summary",
+      content: "One complete section is ready.",
+      severity: "high",
+      data: {
+        metrics: [{ label: "Providers checked", value: "2" }],
+      },
+    };
+    const reportText = `REPORT_OUTPUT
+{
+  "report_version": 1,
+  "run_id": "example-2026-07-02T0900Z",
+  "generated_at": "2026-07-02T09:00:00Z",
+  "title": "Streaming Report",
+  "target": { "name": "Example Project" },
+  "providers": ["openai", "gemini"],
+  "sections": [
+    ${JSON.stringify(completeSection)},
+    { "id": "incoming-section", "type": "change", "title":`;
+    const items: RenderItem[] = [{ kind: "text", itemId: null, text: reportText, final: false }];
+
+    render(<BlockRenderer items={items} sessionStatus="running" />);
+
+    expect(screen.getByTestId("report-output")).toBeDefined();
+    expect(screen.getByText("Streaming Report")).toBeDefined();
+    expect(screen.getAllByText("Executive Summary").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("report-section-loading")).toBeDefined();
+    expect(screen.queryByText(/incoming-section/)).toBeNull();
+  });
+
   it("renders a report when the marked JSON spans adjacent text items", () => {
     const reportJson = JSON.stringify({
       report_version: 1,

@@ -34,7 +34,7 @@ import { toWorkspaceRelativePath, useWorkspaceFileExists } from "@/hooks/useWork
 import { ElicitationCard } from "./ApprovalCard";
 import { ReasoningView } from "./ReasoningView";
 import { ReportOutputView } from "./ReportOutputView";
-import { parseReportOutput } from "./reportOutput";
+import { parseReportOutputState } from "./reportOutput";
 import { SlashCommandCard } from "./SlashCommandCard";
 import { SmartRoutingCard } from "./SmartRoutingCard";
 import { TerminalCommandCard } from "./TerminalCommandCard";
@@ -309,18 +309,18 @@ type ToolRunFragment =
     };
 
 export function BlockRenderer({ items, sessionStatus }: BlockRendererProps) {
+  const isAgentActive = sessionStatus === "running" || sessionStatus === "waiting";
   const combinedReport = parseTextOnlyReport(items);
   if (combinedReport) {
     return (
       <div data-testid="assistant-text-section" className="min-w-0">
-        <ReportOutputView report={combinedReport} />
+        <ReportOutputView report={combinedReport.report} isStreaming={!combinedReport.complete} />
       </div>
     );
   }
 
   const rendered: ReactNode[] = [];
   let previousRenderedItemWasText = false;
-  const isAgentActive = sessionStatus === "running" || sessionStatus === "waiting";
   const streamingRunStart = isAgentActive ? findStreamingRunStart(items) : -1;
   // Reasoning is "currently streaming" iff the agent is live AND this
   // reasoning is the very last item in the bubble. Mirrors the
@@ -383,7 +383,7 @@ export function BlockRenderer({ items, sessionStatus }: BlockRendererProps) {
 
 function parseTextOnlyReport(items: RenderItem[]) {
   if (items.length <= 1 || !items.every((item) => item.kind === "text")) return null;
-  return parseReportOutput(
+  return parseReportOutputState(
     items.map((item) => (item.kind === "text" ? item.text : "")).join("\n\n"),
   );
 }
@@ -513,7 +513,7 @@ function renderItem(
   const key = keyFor(item, index);
   switch (item.kind) {
     case "text": {
-      const report = parseReportOutput(item.text);
+      const report = parseReportOutputState(item.text);
       return (
         <div
           key={key}
@@ -521,7 +521,7 @@ function renderItem(
           className={cn("min-w-0", followsText && "mt-2")}
         >
           {report ? (
-            <ReportOutputView report={report} />
+            <ReportOutputView report={report.report} isStreaming={!report.complete} />
           ) : (
             <FilePathAwareMessageResponse>{item.text}</FilePathAwareMessageResponse>
           )}
