@@ -1207,36 +1207,52 @@ async function sendReportChatMessage(
     if (!streamResponse.ok || !streamResponse.body) {
       throw new Error("Could not open the report chat stream.");
     }
-    const responsePromise = collectReportChatResponse(
-      sessionId,
-      streamResponse.body,
-      controller,
-      onDelta,
-    );
-    await postEvent(sessionId, {
+    const posted = await postEvent(sessionId, {
       type: "message",
       data: {
         role: "user",
         content: [{ type: "input_text", text: message }],
       },
     });
-    return await responsePromise;
+    if (posted.denied) {
+      throw new Error("Report chat was denied by policy.");
+    }
+    return await collectReportChatResponse(sessionId, streamResponse.body, controller, onDelta, {
+      inputItemId: posted.itemId,
+      pendingId: posted.pendingId,
+    });
   } catch (error) {
     controller.abort();
     throw error;
   }
 }
 
-async function collectReportChatResponse(
+interface ReportChatResponseTarget {
+  inputItemId?: string;
+  pendingId?: string;
+}
+
+export async function collectReportChatResponse(
   sessionId: string,
   stream: ReadableStream<Uint8Array>,
   controller: AbortController,
   onDelta?: (text: string) => void,
+  target: ReportChatResponseTarget = {},
 ): Promise<string> {
   let activeResponseId: string | null = null;
   let responseText = "";
+  let waitingForInput = Boolean(target.inputItemId || target.pendingId);
+  let consumedInputItemId = target.inputItemId;
 
   for await (const event of parseSseStream(stream)) {
+    if (waitingForInput) {
+      const consumedId = matchingReportChatInputItemId(event, target);
+      if (consumedId === null) continue;
+      consumedInputItemId = consumedId;
+      waitingForInput = false;
+      continue;
+    }
+
     const eventResponseId = streamEventResponseId(event);
     if (activeResponseId === null && eventResponseId !== null) {
       activeResponseId = eventResponseId;
@@ -1270,7 +1286,10 @@ async function collectReportChatResponse(
       }
       controller.abort();
       if (responseText.trim()) return responseText.trim();
-      return (await fetchReportChatLatestResponse(sessionId)) ?? "No response returned.";
+      return (
+        (await fetchReportChatLatestResponseWithRetry(sessionId, consumedInputItemId)) ??
+        "No response returned."
+      );
     }
     if (event.type === "response_failed") {
       throw new Error(event.response.error?.message ?? "Report chat failed.");
@@ -1289,7 +1308,20 @@ async function collectReportChatResponse(
   }
 
   if (responseText.trim()) return responseText.trim();
-  return (await fetchReportChatLatestResponse(sessionId)) ?? "No response returned.";
+  return (
+    (await fetchReportChatLatestResponseWithRetry(sessionId, consumedInputItemId)) ??
+    "No response returned."
+  );
+}
+
+function matchingReportChatInputItemId(
+  event: StreamEvent,
+  target: ReportChatResponseTarget,
+): string | null {
+  if (event.type !== "session_input_consumed") return null;
+  if (target.inputItemId && event.itemId === target.inputItemId) return event.itemId;
+  if (target.pendingId && event.clearedPendingId === target.pendingId) return event.itemId;
+  return null;
 }
 
 function streamEventResponseId(event: StreamEvent): string | null {
@@ -1318,10 +1350,33 @@ export function reportChatContentText(content: unknown): string {
   return reportChatContentText(record.output);
 }
 
-async function fetchReportChatLatestResponse(sessionId: string): Promise<string | undefined> {
+async function fetchReportChatLatestResponseWithRetry(
+  sessionId: string,
+  afterItemId?: string,
+): Promise<string | undefined> {
+  const immediate = await fetchReportChatLatestResponse(sessionId, afterItemId);
+  if (immediate !== undefined) return immediate;
+  await wait(150);
+  const firstRetry = await fetchReportChatLatestResponse(sessionId, afterItemId);
+  if (firstRetry !== undefined) return firstRetry;
+  await wait(350);
+  const secondRetry = await fetchReportChatLatestResponse(sessionId, afterItemId);
+  if (secondRetry !== undefined) return secondRetry;
+  await wait(700);
+  return fetchReportChatLatestResponse(sessionId, afterItemId);
+}
+
+async function fetchReportChatLatestResponse(
+  sessionId: string,
+  afterItemId?: string,
+): Promise<string | undefined> {
   try {
     const page = await fetchSessionItemsPage(sessionId, { limit: 12 });
-    for (const item of [...page.items].reverse()) {
+    const items =
+      afterItemId === undefined
+        ? page.items
+        : page.items.slice(page.items.findIndex((item) => item.id === afterItemId) + 1);
+    for (const item of [...items].reverse()) {
       const text = extractAssistantText(item);
       if (text !== undefined) return text;
     }
@@ -1329,6 +1384,10 @@ async function fetchReportChatLatestResponse(sessionId: string): Promise<string 
   } catch {
     return undefined;
   }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 }
 
 /**

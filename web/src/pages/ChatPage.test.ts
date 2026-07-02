@@ -8,6 +8,7 @@ import {
   buildPendingBubbles,
   buildSlashCommandMap,
   buildSlashCommandWithArgsSet,
+  collectReportChatResponse,
   collectBubbleMarkdown,
   collectPendingElicitations,
   computeIsWorking,
@@ -55,7 +56,62 @@ describe("report chat response extraction", () => {
       ]),
     ).toBe("First point.\nSecond point.");
   });
+
+  it("waits for the posted report chat input before collecting a response", async () => {
+    const controller = new AbortController();
+    const abortSpy = vi.spyOn(controller, "abort");
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_old",
+            status: "completed",
+            output: [{ type: "message", content: [{ type: "output_text", text: "Old answer." }] }],
+          },
+        }),
+        sseEvent("session.input.consumed", {
+          data: {
+            item_id: "ci_new",
+            type: "message",
+            data: { role: "user", content: [{ type: "input_text", text: "elaborate" }] },
+          },
+        }),
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_new",
+            status: "completed",
+            output: [
+              { type: "message", content: [{ type: "output_text", text: "Fresh answer." }] },
+            ],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      { inputItemId: "ci_new" },
+    );
+
+    expect(result).toBe("Fresh answer.");
+    expect(abortSpy).toHaveBeenCalledOnce();
+  });
 });
+
+function sseEvent(event: string, data: Record<string, unknown>): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+function sseStream(events: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const event of events) {
+        controller.enqueue(encoder.encode(event));
+      }
+      controller.close();
+    },
+  });
+}
 
 describe("Composer permission gating", () => {
   it("read-only (level 1) disables textarea and submit", () => {
