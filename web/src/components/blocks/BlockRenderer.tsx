@@ -309,6 +309,15 @@ type ToolRunFragment =
     };
 
 export function BlockRenderer({ items, sessionStatus }: BlockRendererProps) {
+  const combinedReport = parseTextOnlyReport(items);
+  if (combinedReport) {
+    return (
+      <div data-testid="assistant-text-section" className="min-w-0">
+        <ReportOutputView report={combinedReport} />
+      </div>
+    );
+  }
+
   const rendered: ReactNode[] = [];
   let previousRenderedItemWasText = false;
   const isAgentActive = sessionStatus === "running" || sessionStatus === "waiting";
@@ -370,6 +379,13 @@ export function BlockRenderer({ items, sessionStatus }: BlockRendererProps) {
   }
 
   return <>{rendered}</>;
+}
+
+function parseTextOnlyReport(items: RenderItem[]) {
+  if (items.length <= 1 || !items.every((item) => item.kind === "text")) return null;
+  return parseReportOutput(
+    items.map((item) => (item.kind === "text" ? item.text : "")).join("\n\n"),
+  );
 }
 
 /**
