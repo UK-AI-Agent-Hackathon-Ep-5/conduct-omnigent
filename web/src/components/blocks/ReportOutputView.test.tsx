@@ -94,6 +94,18 @@ describe("ReportOutputView", () => {
     expect(screen.queryByText(["Top", "Signal"].join(" "))).toBeNull();
   });
 
+  it("scrolls the section preview strip from wheel input", () => {
+    render(<ReportOutputView report={REPORT} enablePixi={false} />);
+
+    const strip = screen.getByTestId("report-section-strip");
+    Object.defineProperty(strip, "clientWidth", { configurable: true, value: 320 });
+    Object.defineProperty(strip, "scrollWidth", { configurable: true, value: 960 });
+
+    fireEvent.wheel(strip, { deltaY: 180 });
+
+    expect(strip.scrollLeft).toBe(180);
+  });
+
   it("keeps completed sections visible and shows the incoming section loader", () => {
     render(
       <ReportOutputView
