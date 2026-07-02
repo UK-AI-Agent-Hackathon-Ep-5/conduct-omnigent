@@ -66,6 +66,34 @@ describe("ReportOutputView", () => {
     expect(screen.getByText("Recommended P0 actions")).toBeDefined();
   });
 
+  it("keeps the generated report free of the product brand label", () => {
+    const brand = ["Conduct", "Omnigent"].join(" ");
+
+    render(
+      <ReportOutputView
+        report={{
+          ...REPORT,
+          title: `${brand} LLM Impact Radar Report`,
+          target: { name: `${brand} Example Project` },
+          providers: ["openai", brand],
+          sections: [
+            {
+              ...REPORT.sections[0]!,
+              title: `${brand} Executive Summary`,
+              content: `${brand} should stay out of this report.`,
+            },
+          ],
+        }}
+        enablePixi={false}
+      />,
+    );
+
+    expect(screen.queryByText(new RegExp(brand, "i"))).toBeNull();
+    expect(screen.getByText("LLM Impact Radar Report")).toBeDefined();
+    expect(screen.getAllByText("Executive Summary").length).toBeGreaterThan(0);
+    expect(screen.queryByText(["Top", "Signal"].join(" "))).toBeNull();
+  });
+
   it("keeps completed sections visible and shows the incoming section loader", () => {
     render(
       <ReportOutputView
