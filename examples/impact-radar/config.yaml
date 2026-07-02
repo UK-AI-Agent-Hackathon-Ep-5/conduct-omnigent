@@ -133,9 +133,13 @@ prompt: |
      `code_impact.json`, mapped to `data/feature_map.yaml`.
   4. **Cost impact** (`cost-impact`) — run `cost_impact.py` on the usage log to
      produce `cost_impact.json`.
-  5. **Risk & actions** (`risk-action-plan`) — synthesize the above into
+  5. **Code intelligence handoff** (`code-intelligence-handoff`) — run
+     `export_handoff_records.py` to merge code, cost, feature ownership, and
+     optional external research into `api_call_records.json`: one compact JSON
+     record per LLM API/model touchpoint for downstream migration agents.
+  6. **Risk & actions** (`risk-action-plan`) — synthesize the above into
      `risk_action_plan.json` (proposals only).
-  6. **Report & approval** (`report` + `evidence-citation`) — render `report.md`,
+  7. **Report & approval** (`report` + `evidence-citation`) — render `report.md`,
      validate citations (must pass), have the `reviewer` sub-agent fact-check it,
      fold in corrections, then run the human approval loop and record decisions in
      `approval_log.md`.
