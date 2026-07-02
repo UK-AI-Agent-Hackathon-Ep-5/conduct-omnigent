@@ -95,6 +95,29 @@ describe("report chat response extraction", () => {
     expect(result).toBe("Fresh answer.");
     expect(abortSpy).toHaveBeenCalledOnce();
   });
+
+  it("does not wait forever for native pending input echo", async () => {
+    const controller = new AbortController();
+    const result = await collectReportChatResponse(
+      "conv_report",
+      sseStream([
+        sseEvent("response.completed", {
+          response: {
+            id: "resp_native",
+            status: "completed",
+            output: [
+              { type: "message", content: [{ type: "output_text", text: "Native answer." }] },
+            ],
+          },
+        }),
+      ]),
+      controller,
+      undefined,
+      { pendingId: "pending_native_1" },
+    );
+
+    expect(result).toBe("Native answer.");
+  });
 });
 
 function sseEvent(event: string, data: Record<string, unknown>): string {

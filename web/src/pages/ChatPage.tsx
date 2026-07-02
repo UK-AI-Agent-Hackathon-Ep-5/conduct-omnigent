@@ -1217,9 +1217,18 @@ async function sendReportChatMessage(
     if (posted.denied) {
       throw new Error("Report chat was denied by policy.");
     }
-    return await collectReportChatResponse(sessionId, streamResponse.body, controller, onDelta, {
-      inputItemId: posted.itemId,
-      pendingId: posted.pendingId,
+    const responsePromise = collectReportChatResponse(
+      sessionId,
+      streamResponse.body,
+      controller,
+      onDelta,
+      {
+        inputItemId: posted.itemId,
+        pendingId: posted.pendingId,
+      },
+    );
+    return await reportChatResponseWithTimeout(responsePromise, sessionId, controller, {
+      afterItemId: posted.itemId,
     });
   } catch (error) {
     controller.abort();
@@ -1227,9 +1236,37 @@ async function sendReportChatMessage(
   }
 }
 
+const REPORT_CHAT_RESPONSE_TIMEOUT_MS = 60_000;
+
 interface ReportChatResponseTarget {
   inputItemId?: string;
   pendingId?: string;
+}
+
+interface ReportChatTimeoutOptions {
+  afterItemId?: string;
+}
+
+async function reportChatResponseWithTimeout(
+  responsePromise: Promise<string>,
+  sessionId: string,
+  controller: AbortController,
+  options: ReportChatTimeoutOptions,
+): Promise<string> {
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const timeoutPromise = new Promise<string>((resolve) => {
+    timeoutId = globalThis.setTimeout(() => {
+      controller.abort();
+      void fetchReportChatLatestResponseWithRetry(sessionId, options.afterItemId)
+        .then((response) => resolve(response ?? "No response returned."))
+        .catch(() => resolve("No response returned."));
+    }, REPORT_CHAT_RESPONSE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([responsePromise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) globalThis.clearTimeout(timeoutId);
+  }
 }
 
 export async function collectReportChatResponse(
@@ -1241,7 +1278,7 @@ export async function collectReportChatResponse(
 ): Promise<string> {
   let activeResponseId: string | null = null;
   let responseText = "";
-  let waitingForInput = Boolean(target.inputItemId || target.pendingId);
+  let waitingForInput = Boolean(target.inputItemId);
   let consumedInputItemId = target.inputItemId;
 
   for await (const event of parseSseStream(stream)) {
