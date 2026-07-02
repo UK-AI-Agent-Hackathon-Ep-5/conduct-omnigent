@@ -4,7 +4,7 @@
  * Renders into the AppShell chat outlet (see App.tsx) so the conversations
  * sidebar stays put when you enter settings — only the main area swaps to
  * this view. Inside, a section nav (left) drives a content panel (right),
- * modeled on a desktop-app settings window; a "← Back to Omnigent" link
+ * modeled on a desktop-app settings window; a "Back to Conduct" link
  * returns to the composer.
  *
  * Sections:
@@ -141,7 +141,7 @@ function AppearanceSection() {
   const mode = normalizeThemeMode(theme);
 
   return (
-    <Section title="Appearance" description="Choose how Omnigent looks on this device.">
+    <Section title="Appearance" description="Choose how Conduct looks on this device.">
       {isEmbedded ? (
         <p className="text-sm text-muted-foreground">
           Appearance is controlled by the host application.
@@ -183,7 +183,7 @@ function ShortcutsSection() {
 }
 
 /**
- * Desktop-only: shows which Omnigent CLI binary the shell resolved
+ * Desktop-only: shows which local CLI binary the shell resolved
  * (auto-detected or a custom override). Read-only — setting a custom path is
  * done on the connect/setup screen (the trusted surface that allows free-text
  * entry); the SPA exposes no path setter. A safe "reset to auto-detected" stays
@@ -215,7 +215,7 @@ function LocalCliSection() {
   return (
     <Section
       title="Local CLI"
-      description="The Omnigent command-line tool this app uses to run a local server and connect this machine as a runner."
+      description="The command-line tool this app uses to run a local server and connect this machine as a runner."
     >
       {status === null ? (
         <p className="text-sm text-muted-foreground">CLI status is unavailable.</p>
@@ -248,8 +248,7 @@ function LocalCliSection() {
           ) : (
             <div className="flex flex-col gap-2">
               <p className="text-sm text-muted-foreground">
-                The Omnigent CLI wasn't found. Install it, then set its path from the connect
-                screen:
+                The local CLI wasn't found. Install it, then set its path from the connect screen:
               </p>
               {status.installCommand && (
                 <code className="block overflow-x-auto rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">

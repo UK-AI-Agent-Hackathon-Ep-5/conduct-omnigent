@@ -54,6 +54,8 @@ import {
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { ElicitationCard } from "@/components/blocks/ApprovalCard";
 import { BlockRenderer, FilePathAwareMessageResponse } from "@/components/blocks/BlockRenderer";
+import { ReportChatProvider } from "@/components/blocks/ReportChatContext";
+import { containsReportOutput } from "@/components/blocks/reportOutput";
 import { CompactionMarker, RoutingDecisionChip } from "@/components/blocks/StatusBlocks";
 import { SystemMessageView } from "@/components/blocks/SystemMessage";
 import { parseSystemMessage } from "@/lib/systemMessage";
@@ -913,7 +915,7 @@ export function ChatPage() {
   // background tabs signal parent activity without duplicating child-session
   // badges from the sidebar/Agents rail. An open-but-untitled session
   // (no synthesized title yet) reads as "New session" to match its
-  // sidebar row; the landing page (no active session) stays "Omnigent".
+  // sidebar row; the landing page (no active session) stays "Conduct".
   // Sub-agent (child) sessions are absent from the sidebar list, so
   // ``activeConv`` is null and the title would otherwise read "New session";
   // name the tab after the sub-agent instead, mirroring the header.
@@ -922,7 +924,7 @@ export function ChatPage() {
       ? (boundAgentBySession?.name ?? boundAgentName ?? subAgentLabel ?? null)
       : null;
   useEffect(() => {
-    const fallback = urlConvId ? UNTITLED_CONVERSATION_LABEL : "Omnigent";
+    const fallback = urlConvId ? UNTITLED_CONVERSATION_LABEL : "Conduct";
     const base = truncateTitle(activeConv?.title ?? subAgentTabTitle ?? fallback);
     document.title = showsWorking ? `● ${base}` : base;
   }, [activeConv?.title, subAgentTabTitle, showsWorking, urlConvId]);
@@ -1454,6 +1456,9 @@ function MainAgentSurface({
 
   // Active reply quotes — each "Reply ↵" click appends; consumed by Composer.
   const [replyQuotes, setReplyQuotes] = useState<string[]>([]);
+  const handleReportChat = useCallback((quote: string) => {
+    setReplyQuotes((prev) => [...prev, quote]);
+  }, []);
 
   // Ref forwarded to SelectionPopup to scope selection detection to the
   // conversation area, preventing selections in the composer from triggering
@@ -1590,53 +1595,54 @@ function MainAgentSurface({
         {/* chat-scroll-fade masks the viewport's top edge so scrolling
             content dissolves into the canvas before reaching the
             ChatHeader overlay's controls (geometry in index.css). */}
-        <Conversation className="chat-scroll-fade flex-1">
-          {/* gap-4 overrides ConversationContent's default gap-8 so consecutive agent turns read as one thread. */}
-          <ConversationContent
-            className={cn(
-              "chat-conversation-content mx-auto w-full gap-4 pt-20 pb-6",
-              CHAT_COLUMN_WIDTH,
-            )}
-          >
-            {/* Scroll helpers — must live inside StickToBottom to access context. */}
-            <ScrollToBottomOnSend nonce={sendScrollNonce} />
-            <PreserveScrollDistanceOnResize />
-            <ConversationScrollRefBridge onScroller={setScroller} />
-            <HistoryAutoLoader
-              hasMoreHistory={hasMoreHistory}
-              loadingMoreHistory={loadingMoreHistory}
-            />
-            {bubbles.length === 0 && !showWorkingIndicator ? (
-              // Cold launch: a centered spinner instead of the "ready to
-              // type" empty state (the create-then-send path uses the
-              // "row" variant). Two launch shapes land here: a
-              // terminal-first spin-up (gate on isTerminalFirst too —
-              // terminalStartingUp is set for non-terminal-first sessions
-              // as well) and a managed-sandbox launch, whose stage text
-              // renders in the same spot for ANY session type.
-              (terminalFirst?.isTerminalFirst && terminalFirst.terminalStartingUp) ||
-              sandboxLaunching ? (
-                <RunnerStartingIndicator variant="hero" />
+        <ReportChatProvider value={handleReportChat}>
+          <Conversation className="chat-scroll-fade flex-1">
+            {/* gap-4 overrides ConversationContent's default gap-8 so consecutive agent turns read as one thread. */}
+            <ConversationContent
+              className={cn(
+                "chat-conversation-content mx-auto w-full gap-4 pt-20 pb-6",
+                CHAT_COLUMN_WIDTH,
+              )}
+            >
+              {/* Scroll helpers — must live inside StickToBottom to access context. */}
+              <ScrollToBottomOnSend nonce={sendScrollNonce} />
+              <PreserveScrollDistanceOnResize />
+              <ConversationScrollRefBridge onScroller={setScroller} />
+              <HistoryAutoLoader
+                hasMoreHistory={hasMoreHistory}
+                loadingMoreHistory={loadingMoreHistory}
+              />
+              {bubbles.length === 0 && !showWorkingIndicator ? (
+                // Cold launch: a centered spinner instead of the "ready to
+                // type" empty state (the create-then-send path uses the
+                // "row" variant). Two launch shapes land here: a
+                // terminal-first spin-up (gate on isTerminalFirst too —
+                // terminalStartingUp is set for non-terminal-first sessions
+                // as well) and a managed-sandbox launch, whose stage text
+                // renders in the same spot for ANY session type.
+                (terminalFirst?.isTerminalFirst && terminalFirst.terminalStartingUp) ||
+                sandboxLaunching ? (
+                  <RunnerStartingIndicator variant="hero" />
+                ) : (
+                  <ConversationEmptyState>
+                    <div className="space-y-1.5">
+                      <h3 className="text-2xl font-medium tracking-[-0.02em]">
+                        What should we work on?
+                      </h3>
+                      <p className="text-muted-foreground text-base">
+                        {agentsError
+                          ? `Failed to load agents: ${agentsError instanceof Error ? agentsError.message : String(agentsError)}`
+                          : "Send a message to get started."}
+                      </p>
+                    </div>
+                  </ConversationEmptyState>
+                )
               ) : (
-                <ConversationEmptyState>
-                  <div className="space-y-1.5">
-                    <h3 className="text-2xl font-medium tracking-[-0.02em]">
-                      What should we work on?
-                    </h3>
-                    <p className="text-muted-foreground text-base">
-                      {agentsError
-                        ? `Failed to load agents: ${agentsError instanceof Error ? agentsError.message : String(agentsError)}`
-                        : "Send a message to get started."}
-                    </p>
-                  </div>
-                </ConversationEmptyState>
-              )
-            ) : (
-              <>
-                {streamBubbles.map((bubble) => (
-                  <BubbleView key={bubbleKey(bubble)} bubble={bubble} />
-                ))}
-                {/* Pending elicitation cards, floated to the bottom of the
+                <>
+                  {streamBubbles.map((bubble) => (
+                    <BubbleView key={bubbleKey(bubble)} bubble={bubble} />
+                  ))}
+                  {/* Pending elicitation cards, floated to the bottom of the
                     chat so an outstanding question stays in view (stick-to-
                     bottom) no matter how much text the agent streamed after
                     it. Wrapped in an assistant Message so each matches an
@@ -1645,46 +1651,47 @@ function MainAgentSurface({
                     the composer. Rendered ABOVE the Working… indicator so the
                     card sits closest to the prompt and the shimmer stays the
                     last thing in the flow. */}
-                {pendingElicitations.map((item) => (
-                  <Message
-                    key={item.elicitationId}
-                    from="assistant"
-                    className="max-w-full"
-                    data-testid="bottom-elicitation"
-                  >
-                    <MessageContent className="w-full">
-                      <ElicitationCard item={item} />
-                    </MessageContent>
-                  </Message>
-                ))}
-                {/* Working… shimmer between send and first rendered block.
+                  {pendingElicitations.map((item) => (
+                    <Message
+                      key={item.elicitationId}
+                      from="assistant"
+                      className="max-w-full"
+                      data-testid="bottom-elicitation"
+                    >
+                      <MessageContent className="w-full">
+                        <ElicitationCard item={item} />
+                      </MessageContent>
+                    </Message>
+                  ))}
+                  {/* Working… shimmer between send and first rendered block.
                     Suppressed when the last bubble is a compaction spinner —
                     that bubble already owns the "in-progress" slot. aria-hidden:
                     the pinned pill owns the single aria-live region (see WorkingStatusPin). */}
-                {showWorkingIndicator && <WorkingIndicator />}
-                {/* Terminal-first spin-up cue beneath the just-sent first
+                  {showWorkingIndicator && <WorkingIndicator />}
+                  {/* Terminal-first spin-up cue beneath the just-sent first
                     message: the prompt bubble renders immediately (no
                     runner-online send gate), but `showWorkingIndicator` stays
                     suppressed while the runner is offline, so without this the
                     user's message sits with no sign anything is happening.
                     Self-gates to null off the spin-up window; rendered only
                     when not already showing Working… so the two never stack. */}
-                {!showWorkingIndicator && <RunnerStartingIndicator variant="row" />}
-              </>
-            )}
-          </ConversationContent>
-          <ConversationScrollButton />
-          {/* Outside ConversationContent so it's pinned to the viewport, not the scroll. See WorkingStatusPin.
+                  {!showWorkingIndicator && <RunnerStartingIndicator variant="row" />}
+                </>
+              )}
+            </ConversationContent>
+            <ConversationScrollButton />
+            {/* Outside ConversationContent so it's pinned to the viewport, not the scroll. See WorkingStatusPin.
               Suppressed in a sub-agent session: the composer's "Chatting with sub-agent …" tray owns this slot. */}
-          <WorkingStatusPin show={showWorkingIndicator} suppress={subAgentLabel != null} />
-          <UserMessageNavConnected
-            goPrev={nav.goPrev}
-            goNext={nav.goNext}
-            canPrev={nav.canPrev}
-            canNext={nav.canNext}
-            hidden={userMessageIds.length === 0}
-          />
-        </Conversation>
+            <WorkingStatusPin show={showWorkingIndicator} suppress={subAgentLabel != null} />
+            <UserMessageNavConnected
+              goPrev={nav.goPrev}
+              goNext={nav.goNext}
+              canPrev={nav.canPrev}
+              canNext={nav.canNext}
+              hidden={userMessageIds.length === 0}
+            />
+          </Conversation>
+        </ReportChatProvider>
         {/* Hover the top edge to reveal a pill that loads all older history and
             scrolls to the first message. Rendered here (a wrapper sibling of
             Conversation) rather than inside it so it escapes the chat-scroll-fade
@@ -2967,7 +2974,8 @@ function AssistantBubble({ bubble }: { bubble: Extract<Bubble, { kind: "assistan
   // Elicitation cards (e.g. AskUserQuestion form) want full chat-column
   // width to match the composer, not the default w-fit shrink-to-content.
   const hasElicitation = bubble.items.some((it) => it.kind === "elicitation");
-  const isWide = hasElicitation || containsMarkdownTable(bubble.items);
+  const isWide =
+    hasElicitation || containsMarkdownTable(bubble.items) || containsReportOutput(bubble.items);
 
   const handleCopy = async () => {
     if (!markdownText || !navigator?.clipboard?.writeText) return;
@@ -3470,7 +3478,7 @@ export function subAgentComposerLabel(
  * ~14px corner radius, hiding them behind its straight sides) and ``pb-5.5``
  * re-reserves the hidden region so the label sits above the card's top edge.
  * The card is ``position:relative`` and paints on top, so its own top border
- * is the divider. Brand pink (``brand-accent``) marks this as a sub-agent
+ * is the divider. Conduct orange (``brand-accent``) marks this as a sub-agent
  * context cue, not a status.
  *
  * @param label - The sub-agent instance name, e.g.

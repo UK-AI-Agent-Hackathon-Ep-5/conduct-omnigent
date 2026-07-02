@@ -221,6 +221,36 @@ describe("BlockRenderer dispatch", () => {
     expect(sections[1]!).not.toHaveClass("mt-2");
   });
 
+  it("renders marked report JSON with the report output view", () => {
+    const reportText = `<!-- REPORT -->${JSON.stringify({
+      report_version: 1,
+      run_id: "example-2026-07-02T0900Z",
+      generated_at: "2026-07-02T09:00:00Z",
+      title: "LLM Impact Radar Report",
+      target: { name: "Example Project" },
+      providers: ["openai", "gemini"],
+      sections: [
+        {
+          id: "summary-main",
+          type: "executive_summary",
+          title: "Executive Summary",
+          content: "Three model references need review.",
+          severity: "high",
+          data: {
+            metrics: [{ label: "Providers checked", value: "2" }],
+          },
+        },
+      ],
+    })}`;
+    const items: RenderItem[] = [{ kind: "text", itemId: "t1", text: reportText, final: true }];
+
+    render(<BlockRenderer items={items} sessionStatus="idle" />);
+
+    expect(screen.getByTestId("report-output")).toBeDefined();
+    expect(screen.getByText("LLM Impact Radar Report")).toBeDefined();
+    expect(screen.getAllByText("Providers checked").length).toBeGreaterThan(0);
+  });
+
   it("'See N steps' counts the whole tool run, including the streaming tail", () => {
     // While streaming, the most-recent tools render as a visible tail
     // OUTSIDE the fold. The "See N steps" label must count the whole run

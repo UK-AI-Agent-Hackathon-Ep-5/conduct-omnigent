@@ -128,6 +128,7 @@ import { useResizableSidebar } from "@/hooks/useResizableSidebar";
 import { useSessionSwitchHotkey } from "@/hooks/useSessionSwitchHotkey";
 import { usePinnedSessionHotkeys } from "@/hooks/usePinnedSessionHotkeys";
 import { absoluteTime, relativeTime } from "@/lib/relativeTime";
+import { ConductMark } from "@/components/icons/OttoIcon";
 import { SettingsSidebarBody, useSettingsRoute } from "./settingsNav";
 import {
   type ActiveChatOverride,
@@ -322,7 +323,11 @@ export function Sidebar({ open, onClose, dragProgress = null }: SidebarProps) {
   // exposed as a CSS variable consumed by the ``md:w-[var(--sidebar-width)]``
   // class so it only applies on desktop — on mobile the sidebar is a
   // full-screen overlay (``fixed inset-0``) and the variable is ignored.
-  const { width: sidebarWidth, handleProps: resizeHandleProps } = useResizableSidebar();
+  const {
+    width: sidebarWidth,
+    resizing: sidebarResizing,
+    handleProps: resizeHandleProps,
+  } = useResizableSidebar();
 
   // While the iOS edge-swipe is dragging, the overlay is on-screen and
   // interactive even though `open` hasn't flipped yet — treat a live drag as
@@ -334,9 +339,7 @@ export function Sidebar({ open, onClose, dragProgress = null }: SidebarProps) {
     <aside
       aria-label="Conversations"
       className={cn(
-        // Base: bg + flex column. No transition — expand/collapse snaps
-        // instantly (animating the width also lagged drag-to-resize).
-        // conversations-sidebar only matters under the macOS Electron
+        // Base: bg + flex column. conversations-sidebar only matters under the macOS Electron
         // shell, where it pushes the card below the traffic lights
         // (see the [data-electron-mac] rules in index.css).
         "conversations-sidebar flex flex-col bg-card md:select-none",
@@ -362,7 +365,8 @@ export function Sidebar({ open, onClose, dragProgress = null }: SidebarProps) {
         // full border + shadow. Width (the user-resizable variable) animates
         // →0 to push main; when closed the margin/border collapse too so
         // nothing lingers.
-        "md:relative md:inset-auto md:translate-x-0 md:overflow-hidden",
+        "md:relative md:inset-auto md:translate-x-0 md:overflow-hidden md:transition-[width,margin,border-width,border-color,border-radius,box-shadow] md:duration-300 md:ease-[cubic-bezier(0.22,1,0.36,1)]",
+        sidebarResizing && "md:transition-none",
         open
           ? "md:m-2 md:w-[var(--sidebar-width)] md:rounded-xl md:border md:border-border md:shadow-lg"
           : "md:m-0 md:w-0 md:border-0",
@@ -407,9 +411,10 @@ export function Sidebar({ open, onClose, dragProgress = null }: SidebarProps) {
             <Link
               to="/"
               onClick={onNavClick}
-              className="rounded-sm text-[15px] font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/70"
+              className="flex items-center gap-2 rounded-sm text-[15px] font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/70"
             >
-              Omnigent
+              <ConductMark className="size-5 shrink-0 text-brand-accent" />
+              Conduct
             </Link>
             <div className="flex items-center gap-1">
               {/* Inbox lives at the top next to the collapse toggle. Rendered
@@ -1886,7 +1891,7 @@ function ConversationMenuItems({
           </TooltipContent>
         </Tooltip>
       )}
-      {/* Mark as unread — re-lights the row's pink dot so a session can
+      {/* Mark as unread - re-lights the row's orange dot so a session can
           be flagged to revisit, including the one you're currently
           viewing. Hidden only when the row already shows the dot. */}
       {canMarkUnread && (

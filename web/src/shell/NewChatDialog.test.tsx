@@ -646,6 +646,8 @@ describe("NewChatLandingScreen", () => {
     // The home page offers an inline chat box rather than the old
     // "click New session in the sidebar" placeholder. If it regressed to
     // the placeholder, the composer input would be absent and this fails.
+    expect(screen.getByRole("img", { name: "Conduct" })).toBeTruthy();
+    expect(screen.getByText("Make legacy move")).toBeTruthy();
     expect(screen.getByText("What should we do?")).toBeTruthy();
     expect(screen.getByTestId("new-chat-landing-input")).toBeTruthy();
   });

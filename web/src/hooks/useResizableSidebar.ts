@@ -9,7 +9,7 @@
 // Unlike the inline panel this has no "boost" machinery — nothing auto-widens
 // the sidebar — so the store is just a persisted, viewport-clamped width.
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { readPanelSizePreference, writePanelSizePreference } from "@/lib/panelSizePreferences";
 
 // Default 320px (20rem) — wider than the old fixed ``md:w-64`` (256px) sidebar
@@ -94,6 +94,7 @@ export function useResizableSidebar() {
   const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const width = clamp(raw ?? DEFAULT_WIDTH_PX);
   const dragging = useRef(false);
+  const [resizing, setResizing] = useState(false);
 
   // Re-clamp on viewport resize so a shrunken window pulls the sidebar back
   // under the ceiling; widening re-derives from the persisted preference so the
@@ -109,6 +110,7 @@ export function useResizableSidebar() {
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     dragging.current = true;
+    setResizing(true);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }, []);
@@ -140,6 +142,7 @@ export function useResizableSidebar() {
     function onMouseUp() {
       if (!dragging.current) return;
       dragging.current = false;
+      setResizing(false);
       persistWidth(storedWidth);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
@@ -161,6 +164,8 @@ export function useResizableSidebar() {
   return {
     /** Current sidebar width in px (already viewport-clamped). */
     width,
+    /** True while the resize handle is actively dragging. */
+    resizing,
     handleProps: {
       onMouseDown,
       onKeyDown,

@@ -33,6 +33,8 @@ import {
 import { toWorkspaceRelativePath, useWorkspaceFileExists } from "@/hooks/useWorkspaceChangedFiles";
 import { ElicitationCard } from "./ApprovalCard";
 import { ReasoningView } from "./ReasoningView";
+import { ReportOutputView } from "./ReportOutputView";
+import { parseReportOutput } from "./reportOutput";
 import { SlashCommandCard } from "./SlashCommandCard";
 import { SmartRoutingCard } from "./SmartRoutingCard";
 import { TerminalCommandCard } from "./TerminalCommandCard";
@@ -494,16 +496,22 @@ function renderItem(
 ): ReactNode {
   const key = keyFor(item, index);
   switch (item.kind) {
-    case "text":
+    case "text": {
+      const report = parseReportOutput(item.text);
       return (
         <div
           key={key}
           data-testid="assistant-text-section"
           className={cn("min-w-0", followsText && "mt-2")}
         >
-          <FilePathAwareMessageResponse>{item.text}</FilePathAwareMessageResponse>
+          {report ? (
+            <ReportOutputView report={report} />
+          ) : (
+            <FilePathAwareMessageResponse>{item.text}</FilePathAwareMessageResponse>
+          )}
         </div>
       );
+    }
     case "reasoning":
       return (
         <ReasoningView
