@@ -481,6 +481,9 @@ function ReportSectionDialog({
         },
       });
       if (requestMode === "refine" && quote) {
+        if (isReportChatFailureText(response)) {
+          throw new Error(response);
+        }
         const replacementText = cleanRefinedReportText(response, quote);
         replaceSelectedText(quote, replacementText);
         updateMessage(responseMessageId, {
@@ -575,13 +578,15 @@ function ReportSectionDialog({
                       )}
                     >
                       <span className="mb-1 block font-medium text-muted-foreground text-xs">
-                        {message.role === "assistant"
-                          ? message.mode === "refine"
-                            ? "Refined text"
-                            : "Response"
-                          : message.mode === "refine"
-                            ? "Refine request"
-                            : "You"}
+                        {message.status === "error"
+                          ? "Error"
+                          : message.role === "assistant"
+                            ? message.mode === "refine"
+                              ? "Refined text"
+                              : "Response"
+                            : message.mode === "refine"
+                              ? "Refine request"
+                              : "You"}
                       </span>
                       {message.quote && (
                         <blockquote className="mb-2 border-brand-accent/60 border-l-2 pl-2 text-muted-foreground text-xs leading-5">
@@ -1296,6 +1301,18 @@ function cleanRefinedReportText(value: string, fallback: string): string {
   const trimmed = value.trim();
   const fenced = trimmed.match(/^```(?:\w+)?\s*([\s\S]*?)\s*```$/);
   return cleanReportText(fenced?.[1] ?? trimmed, fallback);
+}
+
+function isReportChatFailureText(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === "an internal error occurred." ||
+    normalized === "an internal error occurred" ||
+    normalized === "report chat failed." ||
+    normalized === "report chat failed" ||
+    normalized === "no response returned." ||
+    normalized === "no response returned"
+  );
 }
 
 function replaceSelectedReportText(content: string, selectedText: string, replacementText: string) {

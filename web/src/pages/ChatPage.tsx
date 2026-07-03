@@ -1064,6 +1064,7 @@ export function ChatPage() {
       isWorking={isWorking}
       showsWorking={showsWorking}
       runnerOnline={runnerOnline}
+      sourceRunnerId={activeSession?.runnerId ?? activeConv?.runner_id ?? null}
       liveness={liveness}
       agentsError={agentsError}
       disabled={!agentId || agentsError !== null}
@@ -1151,6 +1152,7 @@ interface SessionLayoutProps {
 
 interface ReportChatSessionArgs {
   agentId: string;
+  sourceRunnerId?: string | null;
   sourceSessionId: string;
   request: ReportChatRequest;
   sessions: Map<string, string>;
@@ -1158,6 +1160,7 @@ interface ReportChatSessionArgs {
 
 async function ensureReportChatSession({
   agentId,
+  sourceRunnerId,
   sourceSessionId,
   request,
   sessions,
@@ -1167,7 +1170,6 @@ async function ensureReportChatSession({
   if (existingSessionId) return existingSessionId;
 
   const session = await createSession(agentId, [], {
-    parentSessionId: sourceSessionId,
     subAgentName: null,
     title: reportChatSessionTitle(request.title),
     labels: {
@@ -1177,16 +1179,22 @@ async function ensureReportChatSession({
     },
     costControlModeOverride: "off",
   });
+  let helperRunnerId = session.runnerId ?? null;
+  if (!helperRunnerId && sourceRunnerId) {
+    const rebound = await updateSession(session.id, { runnerId: sourceRunnerId, silent: true });
+    helperRunnerId = rebound.runnerId ?? sourceRunnerId;
+  }
   try {
     await updateSession(session.id, { archived: true, silent: true });
   } catch {
     // The chat still works if archiving the helper session fails.
   }
-  if (!session.runnerId) {
+  if (!helperRunnerId) {
     const rebound = await bindOnlyOnlineRunner(session.id);
     if (rebound === null) {
       throw new Error("No online runner is available for report chat.");
     }
+    helperRunnerId = rebound.runnerId ?? null;
   }
   sessions.set(sessionKey, session.id);
   return session.id;
@@ -1396,8 +1404,7 @@ export async function collectReportChatResponse(
     (await fetchReportChatLatestResponseWithRetry(
       sessionId,
       consumedInputItemId ?? target.afterItemId,
-    )) ??
-    "No response returned."
+    )) ?? "No response returned."
   );
 }
 
@@ -1638,6 +1645,8 @@ interface MainAgentSurfaceProps {
    * affordances key off `liveness` instead.
    */
   runnerOnline: boolean | undefined;
+  /** Runner bound to the source session; section chats reuse it. */
+  sourceRunnerId: string | null | undefined;
   /** Derived open-session liveness — drives the reconnect hint/banner. */
   liveness: SessionLiveness;
   agentsError: unknown;
@@ -1728,6 +1737,7 @@ function MainAgentSurface({
   isWorking,
   showsWorking,
   runnerOnline,
+  sourceRunnerId,
   liveness,
   agentsError,
   disabled,
@@ -1835,13 +1845,14 @@ function MainAgentSurface({
       }
       const sessionId = await ensureReportChatSession({
         agentId: selectedAgentId,
+        sourceRunnerId,
         sourceSessionId,
         request,
         sessions: reportChatSessionsRef.current,
       });
       return sendReportChatMessage(sessionId, request.message, request.onDelta);
     },
-    [conversationId, selectedAgentId],
+    [conversationId, selectedAgentId, sourceRunnerId],
   );
 
   // Ref forwarded to SelectionPopup to scope selection detection to the

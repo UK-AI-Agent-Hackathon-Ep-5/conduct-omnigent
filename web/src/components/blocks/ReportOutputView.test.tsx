@@ -256,4 +256,46 @@ describe("ReportOutputView", () => {
 
     selectionSpy.mockRestore();
   });
+
+  it("does not apply generic report chat failures as refined text", async () => {
+    const onReportChat = vi.fn(async () => "An internal error occurred.");
+    const selectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
+      toString: () => "SDK",
+    } as unknown as Selection);
+
+    render(
+      <ReportChatProvider value={onReportChat}>
+        <ReportOutputView
+          report={{
+            ...REPORT,
+            sections: [
+              {
+                ...REPORT.sections[0]!,
+                content: "The SDK integration needs review before release.",
+              },
+            ],
+          }}
+          enablePixi={false}
+        />
+      </ReportChatProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
+    fireEvent.click(screen.getByLabelText("Refine mode"));
+    fireEvent.mouseUp(screen.getByTestId("report-section-content"));
+    const textarea = screen.getByLabelText("Question about report section");
+    fireEvent.change(textarea, { target: { value: "use full spell" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(onReportChat).toHaveBeenCalledTimes(1));
+    const content = screen.getByTestId("report-section-content");
+    expect(
+      within(content).getByText("The SDK integration needs review before release."),
+    ).toBeDefined();
+    const chatLog = screen.getByTestId("report-section-chat-log");
+    expect(within(chatLog).getByText("Error")).toBeDefined();
+    expect(within(chatLog).getByText("An internal error occurred.")).toBeDefined();
+
+    selectionSpy.mockRestore();
+  });
 });
