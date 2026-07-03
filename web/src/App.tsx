@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { AppLoadingScreen } from "@/components/AppLoadingScreen";
 import { ChatPage } from "@/pages/ChatPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { useServerInfo } from "@/lib/CapabilitiesContext";
@@ -83,11 +84,9 @@ function App({ basename }: AppProps = {}) {
   // the original relative route table.
   const prefix = basename ?? "";
   const info = useServerInfo();
-  // While the probe is in flight, render nothing — first paint is
-  // ~30ms after boot anyway, and flashing the chrome we may
-  // immediately tear down once the probe returns is worse than a
-  // tiny blank moment.
-  if (info === "loading") return null;
+  // Keep a real first paint while the server capability probe decides
+  // which route table is safe to mount.
+  if (info === "loading") return <AppLoadingScreen />;
 
   // First-run: accounts on but no admin claimed yet. Route EVERY path to
   // the Create-admin form so the first visitor lands on it no matter how
@@ -97,7 +96,7 @@ function App({ basename }: AppProps = {}) {
   // after the first admin exists.
   if (info.accounts_enabled && info.needs_setup) {
     return (
-      <Suspense fallback={null}>
+      <Suspense fallback={<AppLoadingScreen />}>
         <Routes>
           <Route path={basename ? `${prefix}/*` : "*"} element={<SetupPage />} />
         </Routes>
@@ -106,7 +105,7 @@ function App({ basename }: AppProps = {}) {
   }
 
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<AppLoadingScreen />}>
       <Routes>
         {info.accounts_enabled && (
           <>

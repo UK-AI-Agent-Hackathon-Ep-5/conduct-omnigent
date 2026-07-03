@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.tsx";
+import { AppLoadingScreen } from "./components/AppLoadingScreen";
 import { PWAUpdateBanner } from "./components/pwa/PWAUpdateBanner";
 import { ThemeProvider } from "./components/theme/ThemeProvider";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -48,13 +49,12 @@ void resolveIdentity();
 // No-op off the iOS shell (the inset vars stay at their env()-only defaults).
 initNativeInsets();
 
-// Probe /v1/info BEFORE the first render so the route table knows
+// Probe /v1/info before mounting the route table so it knows
 // whether to mount accounts routes. The probe is unauthed and the
-// failure path resolves to "accounts off" — so even a stalled or
-// missing server doesn't deadlock first paint. We add a small
-// safety timeout (1.5s) so users on a flaky network still get
-// something on screen.
-const _bootProbe: Promise<ServerInfo> = Promise.race([
+// failure path resolves to "accounts off". The loading screen paints
+// immediately while a small safety timeout (1.5s) keeps the route table
+// from waiting forever on a flaky network.
+const bootProbe: Promise<ServerInfo> = Promise.race([
   resolveServerInfo(),
   new Promise<ServerInfo>((resolve) =>
     setTimeout(
@@ -74,8 +74,18 @@ const _bootProbe: Promise<ServerInfo> = Promise.race([
   ),
 ]);
 
-void _bootProbe.then((info) => {
-  createRoot(document.getElementById("root")!).render(
+const root = createRoot(document.getElementById("root")!);
+
+root.render(
+  <StrictMode>
+    <ThemeProvider>
+      <AppLoadingScreen />
+    </ThemeProvider>
+  </StrictMode>,
+);
+
+void bootProbe.then((info) => {
+  root.render(
     <StrictMode>
       <CapabilitiesProvider info={info}>
         <QueryClientProvider client={queryClient}>

@@ -8,9 +8,195 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Conduct</title>
+    <style>
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        color: #1e0d15;
+        background: #fff;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          sans-serif;
+      }
+
+      .boot-screen {
+        box-sizing: border-box;
+        display: flex;
+        min-height: 100dvh;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        padding: 40px 24px;
+        background: linear-gradient(45deg, #fff, #fffaf7 28%, #fff6f0 56%, #fff);
+      }
+
+      .boot-panel {
+        display: flex;
+        width: min(100%, 384px);
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+        text-align: center;
+      }
+
+      .boot-mark {
+        position: relative;
+        display: flex;
+        width: 80px;
+        height: 80px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgb(30 13 21 / 8%);
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 1px 2px rgb(30 13 21 / 8%);
+      }
+
+      .boot-mark::before {
+        position: absolute;
+        inset: 12px;
+        border-radius: 6px;
+        background: rgb(248 80 24 / 10%);
+        content: "";
+      }
+
+      .boot-spinner {
+        position: relative;
+        width: 28px;
+        height: 28px;
+        border: 3px solid rgb(248 80 24 / 20%);
+        border-top-color: #f85018;
+        border-radius: 999px;
+        animation: boot-spin 900ms linear infinite;
+      }
+
+      .boot-copy {
+        display: grid;
+        gap: 8px;
+      }
+
+      .boot-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        line-height: 28px;
+      }
+
+      .boot-text {
+        max-width: 288px;
+        margin: 0;
+        color: rgb(30 13 21 / 60%);
+        font-size: 14px;
+        line-height: 24px;
+      }
+
+      .boot-phases {
+        display: grid;
+        width: 100%;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .boot-phase {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid rgb(30 13 21 / 8%);
+        border-radius: 6px;
+        background: rgb(255 255 255 / 70%);
+        padding: 8px;
+        color: rgb(30 13 21 / 60%);
+        font-size: 12px;
+        line-height: 16px;
+      }
+
+      .boot-dot {
+        width: 6px;
+        height: 6px;
+        flex: 0 0 auto;
+        border-radius: 999px;
+        background: var(--dot);
+      }
+
+      .boot-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body {
+          color: #f8fafc;
+          background: #1e0d15;
+        }
+
+        .boot-screen {
+          background:
+            linear-gradient(145deg, rgb(248 80 24 / 16%) 0%, transparent 38%),
+            linear-gradient(145deg, #1e0d15 0%, #14090f 52%, #241119 100%);
+        }
+
+        .boot-mark,
+        .boot-phase {
+          border-color: rgb(255 255 255 / 9%);
+          background: rgb(41 20 29 / 70%);
+        }
+
+        .boot-text,
+        .boot-phase {
+          color: #92a4b3;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .boot-spinner {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="boot-screen" aria-busy="true">
+        <section class="boot-panel" aria-live="polite">
+          <div class="boot-mark" aria-hidden="true">
+            <div class="boot-spinner"></div>
+          </div>
+          <div class="boot-copy">
+            <h1 class="boot-title">Preparing workspace</h1>
+            <p class="boot-text">Connecting to the server and restoring your session.</p>
+          </div>
+          <div class="boot-phases" aria-hidden="true">
+            <div class="boot-phase">
+              <span class="boot-dot" style="--dot: #f85018"></span>
+              <span class="boot-label">Server</span>
+            </div>
+            <div class="boot-phase">
+              <span class="boot-dot" style="--dot: #1fc8ff"></span>
+              <span class="boot-label">Sessions</span>
+            </div>
+            <div class="boot-phase">
+              <span class="boot-dot" style="--dot: #2ea65c"></span>
+              <span class="boot-label">Workspace</span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
