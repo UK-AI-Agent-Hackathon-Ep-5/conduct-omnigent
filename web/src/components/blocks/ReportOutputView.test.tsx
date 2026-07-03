@@ -55,6 +55,33 @@ const REPORT: ReportOutput = {
   ],
 };
 
+type MockSelectionState = {
+  text: string;
+  anchorNode: Node | null;
+  focusNode?: Node | null;
+};
+
+function mockWindowSelection(state: MockSelectionState) {
+  return vi.spyOn(window, "getSelection").mockImplementation(
+    () =>
+      ({
+        toString: () => state.text,
+        rangeCount: state.text ? 1 : 0,
+        isCollapsed: state.text.length === 0,
+        anchorNode: state.anchorNode,
+        focusNode: state.focusNode ?? state.anchorNode,
+        getRangeAt: () =>
+          ({
+            commonAncestorContainer: state.anchorNode ?? document.body,
+          }) as Range,
+      }) as unknown as Selection,
+  );
+}
+
+function firstTextNode(element: Element): Node {
+  return element.firstChild ?? element;
+}
+
 describe("ReportOutputView", () => {
   it("renders a horizontal section preview strip without inline detail", () => {
     render(<ReportOutputView report={REPORT} enablePixi={false} />);
@@ -157,9 +184,8 @@ describe("ReportOutputView", () => {
       request.onDelta?.("It points at the fallback model.");
       return "It points at the fallback model.";
     });
-    const selectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
-      toString: () => "deepseek-chat",
-    } as unknown as Selection);
+    const selectionState: MockSelectionState = { text: "", anchorNode: null };
+    const selectionSpy = mockWindowSelection(selectionState);
 
     render(
       <ReportChatProvider value={onReportChat}>
@@ -168,6 +194,11 @@ describe("ReportOutputView", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Hardcoded DeepSeek/i }));
+    const reportText = within(screen.getByTestId("report-section-content")).getByText(
+      "The fallback chat path still uses deepseek-chat.",
+    );
+    selectionState.text = "deepseek-chat";
+    selectionState.anchorNode = firstTextNode(reportText);
     fireEvent.mouseUp(screen.getByTestId("report-section-content"));
     const textarea = screen.getByLabelText("Question about report section");
     fireEvent.change(textarea, {
@@ -218,13 +249,8 @@ describe("ReportOutputView", () => {
       expect(request.message).toContain("Edit request:\nMake this clearer");
       return replacement;
     });
-    let selectedText = "";
-    const selectionSpy = vi.spyOn(window, "getSelection").mockImplementation(
-      () =>
-        ({
-          toString: () => selectedText,
-        }) as unknown as Selection,
-    );
+    const selectionState: MockSelectionState = { text: "", anchorNode: null };
+    const selectionSpy = mockWindowSelection(selectionState);
 
     render(
       <ReportChatProvider value={onReportChat}>
@@ -239,7 +265,11 @@ describe("ReportOutputView", () => {
     fireEvent.keyDown(textarea, { key: "Enter" });
     expect(onReportChat).not.toHaveBeenCalled();
 
-    selectedText = "Three model references need review before release.";
+    const reportText = within(screen.getByTestId("report-section-content")).getByText(
+      "Three model references need review before release.",
+    );
+    selectionState.text = "Three model references need review before release.";
+    selectionState.anchorNode = firstTextNode(reportText);
     fireEvent.mouseUp(screen.getByTestId("report-section-content"));
     fireEvent.keyDown(textarea, { key: "Enter" });
 
@@ -257,11 +287,126 @@ describe("ReportOutputView", () => {
     selectionSpy.mockRestore();
   });
 
+  it("captures chat quote selection without clearing the report selection", async () => {
+    const onReportChat = vi.fn(async (request: ReportChatRequest) => {
+      if (request.message.includes("Rewrite only the selected report text")) {
+        return "the DeepSeek chat fallback";
+      }
+      if (request.message.includes("Question:\nFollow up")) {
+        return "Second response";
+      }
+      request.onDelta?.("It points at the fallback model.");
+      return "It points at the fallback model.";
+    });
+    const selectionState: MockSelectionState = { text: "", anchorNode: null };
+    const selectionSpy = mockWindowSelection(selectionState);
+
+    render(
+      <ReportChatProvider value={onReportChat}>
+        <ReportOutputView report={REPORT} enablePixi={false} />
+      </ReportChatProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Hardcoded DeepSeek/i }));
+    const reportText = within(screen.getByTestId("report-section-content")).getByText(
+      "The fallback chat path still uses deepseek-chat.",
+    );
+    selectionState.text = "deepseek-chat";
+    selectionState.anchorNode = firstTextNode(reportText);
+    fireEvent.mouseUp(screen.getByTestId("report-section-content"));
+
+    const textarea = screen.getByLabelText("Question about report section");
+    fireEvent.change(textarea, { target: { value: "Why does this matter?" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(onReportChat).toHaveBeenCalledTimes(1));
+    const chatLog = screen.getByTestId("report-section-chat-log");
+    const responseText = within(chatLog).getByText("It points at the fallback model.");
+    selectionState.text = "It points at the fallback model.";
+    selectionState.anchorNode = firstTextNode(responseText);
+    fireEvent.mouseUp(chatLog);
+
+    expect(screen.getByText("Selected excerpt")).toBeDefined();
+    fireEvent.change(textarea, { target: { value: "Follow up" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(onReportChat).toHaveBeenCalledTimes(2));
+    const chatQuoteRequest = onReportChat.mock.calls[1]?.[0];
+    if (!chatQuoteRequest) throw new Error("Expected chat quote request");
+    expect(chatQuoteRequest.message).toContain("Selected text:\nIt points at the fallback model.");
+
+    fireEvent.click(screen.getByLabelText("Refine mode"));
+    fireEvent.change(textarea, { target: { value: "Use full wording" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(onReportChat).toHaveBeenCalledTimes(3));
+    const refineRequest = onReportChat.mock.calls[2]?.[0];
+    if (!refineRequest) throw new Error("Expected refine request");
+    expect(refineRequest.message).toContain("Selected report text:\ndeepseek-chat");
+
+    selectionSpy.mockRestore();
+  });
+
+  it("ignores empty and cross-pane selections and clears selection explicitly", () => {
+    const onReportChat = vi.fn(async () => "unused");
+    const selectionState: MockSelectionState = { text: "", anchorNode: null };
+    const selectionSpy = mockWindowSelection(selectionState);
+
+    render(
+      <ReportChatProvider value={onReportChat}>
+        <ReportOutputView report={REPORT} enablePixi={false} />
+      </ReportChatProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
+    fireEvent.click(screen.getByLabelText("Refine mode"));
+    const textarea = screen.getByLabelText("Question about report section");
+    fireEvent.change(textarea, { target: { value: "Make this clearer" } });
+
+    const reportText = within(screen.getByTestId("report-section-content")).getByText(
+      "Three model references need review before release.",
+    );
+    selectionState.text = "Three model references need review before release.";
+    selectionState.anchorNode = firstTextNode(reportText);
+    selectionState.focusNode = firstTextNode(textarea);
+    fireEvent.mouseUp(screen.getByTestId("report-section-content"));
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(onReportChat).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("report-section-selected-text")).toBeNull();
+
+    selectionState.text = "";
+    selectionState.anchorNode = firstTextNode(reportText);
+    selectionState.focusNode = firstTextNode(reportText);
+    fireEvent.mouseUp(screen.getByTestId("report-section-content"));
+    expect(screen.queryByTestId("report-section-selected-text")).toBeNull();
+
+    selectionState.text = "Three model references need review before release.";
+    fireEvent.keyUp(screen.getByTestId("report-section-content"), {
+      key: "ArrowRight",
+      shiftKey: true,
+    });
+    expect(screen.getByText("Selected report text")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.queryByTestId("report-section-selected-text")).toBeNull();
+
+    fireEvent.touchEnd(screen.getByTestId("report-section-content"));
+    expect(screen.getByText("Selected report text")).toBeDefined();
+
+    fireEvent.click(
+      within(screen.getByTestId("report-section-dialog")).getByRole("button", { name: "Close" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Hardcoded DeepSeek/i }));
+    expect(screen.queryByTestId("report-section-selected-text")).toBeNull();
+
+    selectionSpy.mockRestore();
+  });
+
   it("does not apply generic report chat failures as refined text", async () => {
     const onReportChat = vi.fn(async () => "An internal error occurred.");
-    const selectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
-      toString: () => "SDK",
-    } as unknown as Selection);
+    const selectionState: MockSelectionState = { text: "", anchorNode: null };
+    const selectionSpy = mockWindowSelection(selectionState);
 
     render(
       <ReportChatProvider value={onReportChat}>
@@ -282,6 +427,11 @@ describe("ReportOutputView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
     fireEvent.click(screen.getByLabelText("Refine mode"));
+    const reportText = within(screen.getByTestId("report-section-content")).getByText(
+      "The SDK integration needs review before release.",
+    );
+    selectionState.text = "SDK";
+    selectionState.anchorNode = firstTextNode(reportText);
     fireEvent.mouseUp(screen.getByTestId("report-section-content"));
     const textarea = screen.getByLabelText("Question about report section");
     fireEvent.change(textarea, { target: { value: "use full spell" } });

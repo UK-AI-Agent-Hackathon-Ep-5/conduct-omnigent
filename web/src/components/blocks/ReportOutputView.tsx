@@ -388,7 +388,9 @@ function ReportSectionDialog({
 }) {
   const [mode, setMode] = useState<ReportDialogMode>("chat");
   const [draft, setDraft] = useState("");
-  const [selection, setSelection] = useState<ReportTextSelection | null>(null);
+  const [reportSelection, setReportSelection] = useState<ReportTextSelection | null>(null);
+  const [chatSelection, setChatSelection] = useState<ReportTextSelection | null>(null);
+  const reportTextRef = useRef<HTMLParagraphElement>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
   const sanitizedReport = useMemo(
     () => ({ ...report, title: reportTitle, target: sanitizeReportTarget(report.target) }),
@@ -398,7 +400,8 @@ function ReportSectionDialog({
   const isSending = messages.some(
     (message) => message.status === "sending" || message.status === "streaming",
   );
-  const selectedReportText = selection?.source === "report" ? selection.text : "";
+  const selectedReportText = reportSelection?.text ?? "";
+  const activeSelection = mode === "refine" ? reportSelection : (chatSelection ?? reportSelection);
   const canSend =
     reportChat !== null &&
     !isSending &&
@@ -417,7 +420,8 @@ function ReportSectionDialog({
 
   useEffect(() => {
     setDraft("");
-    setSelection(null);
+    setReportSelection(null);
+    setChatSelection(null);
   }, [section.id]);
 
   useEffect(() => {
@@ -432,8 +436,22 @@ function ReportSectionDialog({
   }, [messages, open]);
 
   function captureSelection(source: ReportTextSelection["source"]) {
-    const selectedText = selectedModalText();
-    if (selectedText) setSelection({ text: selectedText, source });
+    const container = source === "report" ? reportTextRef.current : chatLogRef.current;
+    const selectedText = selectedModalText(container);
+    if (!selectedText) return;
+    if (source === "report") {
+      setReportSelection({ text: selectedText, source });
+      return;
+    }
+    setChatSelection({ text: selectedText, source });
+  }
+
+  function clearActiveSelection() {
+    if (mode === "refine" || activeSelection?.source === "report") {
+      setReportSelection(null);
+      return;
+    }
+    setChatSelection(null);
   }
 
   function submitQuestion(event: FormEvent<HTMLFormElement>) {
@@ -442,7 +460,7 @@ function ReportSectionDialog({
     if (!question || !reportChat || isSending) return;
     if (mode === "refine" && !selectedReportText) return;
 
-    const quote = mode === "refine" ? selectedReportText : (selection?.text ?? null);
+    const quote = mode === "refine" ? selectedReportText : (activeSelection?.text ?? null);
     const userMessageId = nextMessageId();
     const responseMessageId = nextMessageId();
     appendMessages([
@@ -463,7 +481,11 @@ function ReportSectionDialog({
       },
     ]);
     setDraft("");
-    setSelection(null);
+    if (mode === "refine") {
+      setReportSelection(null);
+    } else if (chatSelection) {
+      setChatSelection(null);
+    }
     void sendQuestion(question, quote, mode, responseMessageId, reportChat);
   }
 
@@ -558,6 +580,9 @@ function ReportSectionDialog({
               className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-card/65"
               data-testid="report-section-content"
               onMouseUp={() => captureSelection("report")}
+              onKeyUp={() => captureSelection("report")}
+              onTouchEnd={() => captureSelection("report")}
+              tabIndex={0}
             >
               <div className="flex items-center justify-between gap-3 border-border/70 border-b px-4 py-3">
                 <div className="flex min-w-0 items-center gap-2">
@@ -569,7 +594,7 @@ function ReportSectionDialog({
                 </span>
               </div>
               <div className="p-4">
-                <p className="whitespace-pre-wrap text-sm leading-6">
+                <p ref={reportTextRef} className="whitespace-pre-wrap text-sm leading-6">
                   {cleanReportText(section.content)}
                 </p>
                 <CitationChips section={section} />
@@ -626,7 +651,11 @@ function ReportSectionDialog({
               className="min-h-0 flex-1 overflow-y-auto p-3"
               data-testid="report-section-chat-log"
               onMouseUp={() => captureSelection("chat")}
+              onKeyUp={() => captureSelection("chat")}
+              onTouchEnd={() => captureSelection("chat")}
               aria-live="polite"
+              aria-label="Section chat history"
+              tabIndex={0}
             >
               {messages.length === 0 ? (
                 <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed border-border/80 bg-background/45 p-4 text-center">
@@ -691,7 +720,7 @@ function ReportSectionDialog({
             </div>
 
             <div className="shrink-0 border-border/70 border-t bg-background/80 p-3">
-              {selection ? (
+              {activeSelection ? (
                 <div
                   className="rounded-lg border border-brand-accent/30 bg-brand-accent/10 p-3"
                   data-testid="report-section-selected-text"
@@ -700,17 +729,19 @@ function ReportSectionDialog({
                     <div className="min-w-0">
                       <span className="flex items-center gap-1.5 font-medium text-brand-accent text-xs">
                         <QuoteIcon className="size-3.5" />
-                        {selection.source === "report" ? "Selected report text" : "Selected excerpt"}
+                        {activeSelection.source === "report"
+                          ? "Selected report text"
+                          : "Selected excerpt"}
                       </span>
                       <p className="mt-1 line-clamp-3 text-muted-foreground text-xs leading-5">
-                        {selection.text}
+                        {activeSelection.text}
                       </p>
                     </div>
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => setSelection(null)}
+                      onClick={clearActiveSelection}
                     >
                       Clear
                     </Button>
@@ -1362,9 +1393,22 @@ function buildReportChatThreadKey(report: ReportOutput, section: ReportSection):
   return `${reportKey}:${section.id}`;
 }
 
-function selectedModalText(): string {
+function selectedModalText(container: HTMLElement | null): string {
   if (typeof window === "undefined") return "";
-  return cleanReportText(window.getSelection()?.toString() ?? "");
+  if (!container) return "";
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return "";
+  if (
+    !isSelectionNodeInside(container, selection.anchorNode) ||
+    !isSelectionNodeInside(container, selection.focusNode)
+  ) {
+    return "";
+  }
+  return cleanReportText(selection.toString());
+}
+
+function isSelectionNodeInside(container: HTMLElement, node: Node | null): boolean {
+  return node !== null && (node === container || container.contains(node));
 }
 
 function cleanRefinedReportText(value: string, fallback: string): string {
