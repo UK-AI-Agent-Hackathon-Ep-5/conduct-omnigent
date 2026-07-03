@@ -184,6 +184,42 @@ describe("createSession", () => {
     });
   });
 
+  it("forwards host and workspace for host-bound helper sessions", async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockJsonResponse({
+        id: "conv_report_chat",
+        agent_id: "agent_xyz",
+        runner_id: "runner_launched",
+        host_id: "host_a1b2",
+        workspace: "/repo/project",
+        status: "idle",
+        created_at: 1704067200,
+      }),
+    );
+
+    const session = await createSession("agent_xyz", [], {
+      title: "report-chat:summary",
+      labels: { "omnigent.report_chat": "true" },
+      hostId: "host_a1b2",
+      workspace: "/repo/project",
+      costControlModeOverride: "off",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      agent_id: "agent_xyz",
+      initial_items: [],
+      title: "report-chat:summary",
+      labels: { "omnigent.report_chat": "true" },
+      host_id: "host_a1b2",
+      workspace: "/repo/project",
+      cost_control_mode_override: "off",
+    });
+    expect(session.runnerId).toBe("runner_launched");
+    expect(session.hostId).toBe("host_a1b2");
+    expect(session.workspace).toBe("/repo/project");
+  });
+
   it("omits the optional fields entirely when no options are passed", async () => {
     fetchMock.mockResolvedValueOnce(
       mockJsonResponse({

@@ -1064,7 +1064,11 @@ export function ChatPage() {
       isWorking={isWorking}
       showsWorking={showsWorking}
       runnerOnline={runnerOnline}
-      sourceRunnerId={activeSession?.runnerId ?? activeConv?.runner_id ?? null}
+      sourceHostId={activeSession?.hostId ?? activeConv?.host_id ?? null}
+      sourceRunnerId={
+        runnerOnline === true ? (activeSession?.runnerId ?? activeConv?.runner_id ?? null) : null
+      }
+      sourceWorkspace={activeSession?.workspace ?? activeConv?.workspace ?? null}
       liveness={liveness}
       agentsError={agentsError}
       disabled={!agentId || agentsError !== null}
@@ -1153,6 +1157,8 @@ interface SessionLayoutProps {
 interface ReportChatSessionArgs {
   agentId: string;
   sourceRunnerId?: string | null;
+  sourceHostId?: string | null;
+  sourceWorkspace?: string | null;
   sourceSessionId: string;
   request: ReportChatRequest;
   sessions: Map<string, string>;
@@ -1160,14 +1166,17 @@ interface ReportChatSessionArgs {
 
 async function ensureReportChatSession({
   agentId,
+  sourceHostId,
   sourceRunnerId,
   sourceSessionId,
+  sourceWorkspace,
   request,
   sessions,
 }: ReportChatSessionArgs): Promise<string> {
   const sessionKey = `${sourceSessionId}:${request.threadKey}`;
   const existingSessionId = sessions.get(sessionKey);
   if (existingSessionId) return existingSessionId;
+  const shouldLaunchHelperOnHost = !sourceRunnerId && Boolean(sourceHostId && sourceWorkspace);
 
   const session = await createSession(agentId, [], {
     subAgentName: null,
@@ -1177,6 +1186,8 @@ async function ensureReportChatSession({
       "omnigent.report_chat.source_session_id": sourceSessionId,
       "omnigent.report_chat.thread_key": request.threadKey,
     },
+    ...(shouldLaunchHelperOnHost && sourceHostId ? { hostId: sourceHostId } : {}),
+    ...(shouldLaunchHelperOnHost && sourceWorkspace ? { workspace: sourceWorkspace } : {}),
     costControlModeOverride: "off",
   });
   let helperRunnerId = session.runnerId ?? null;
@@ -1645,8 +1656,12 @@ interface MainAgentSurfaceProps {
    * affordances key off `liveness` instead.
    */
   runnerOnline: boolean | undefined;
+  /** Host backing the source session; used to wake report helper chats when no runner is live. */
+  sourceHostId: string | null | undefined;
   /** Runner bound to the source session; section chats reuse it. */
   sourceRunnerId: string | null | undefined;
+  /** Workspace backing the source session; paired with sourceHostId for helper relaunch. */
+  sourceWorkspace: string | null | undefined;
   /** Derived open-session liveness — drives the reconnect hint/banner. */
   liveness: SessionLiveness;
   agentsError: unknown;
@@ -1737,7 +1752,9 @@ function MainAgentSurface({
   isWorking,
   showsWorking,
   runnerOnline,
+  sourceHostId,
   sourceRunnerId,
+  sourceWorkspace,
   liveness,
   agentsError,
   disabled,
@@ -1845,14 +1862,16 @@ function MainAgentSurface({
       }
       const sessionId = await ensureReportChatSession({
         agentId: selectedAgentId,
+        sourceHostId,
         sourceRunnerId,
         sourceSessionId,
+        sourceWorkspace,
         request,
         sessions: reportChatSessionsRef.current,
       });
       return sendReportChatMessage(sessionId, request.message, request.onDelta);
     },
-    [conversationId, selectedAgentId, sourceRunnerId],
+    [conversationId, selectedAgentId, sourceHostId, sourceRunnerId, sourceWorkspace],
   );
 
   // Ref forwarded to SelectionPopup to scope selection detection to the

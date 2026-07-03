@@ -399,6 +399,8 @@ export async function createSession(
     subAgentName?: string | null;
     title?: string;
     labels?: Record<string, string>;
+    hostId?: string;
+    workspace?: string;
     costControlModeOverride?: "on" | "off" | null;
   } = {},
 ): Promise<Session> {
@@ -409,6 +411,8 @@ export async function createSession(
     sub_agent_name?: string | null;
     title?: string;
     labels?: Record<string, string>;
+    host_id?: string;
+    workspace?: string;
     cost_control_mode_override?: "on" | "off" | null;
   } = { agent_id: agentId, initial_items: initialItems };
   if (options.parentSessionId !== undefined) {
@@ -422,6 +426,12 @@ export async function createSession(
   }
   if (options.labels !== undefined) {
     body.labels = options.labels;
+  }
+  if (options.hostId !== undefined) {
+    body.host_id = options.hostId;
+  }
+  if (options.workspace !== undefined) {
+    body.workspace = options.workspace;
   }
   if (options.costControlModeOverride !== undefined) {
     body.cost_control_mode_override = options.costControlModeOverride;
