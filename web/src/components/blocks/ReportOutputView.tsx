@@ -15,6 +15,9 @@ import {
   CircleDollarSignIcon,
   ExternalLinkIcon,
   MessageSquareTextIcon,
+  PenLineIcon,
+  QuoteIcon,
+  SendHorizontalIcon,
   SparklesIcon,
   TargetIcon,
   TrendingDownIcon,
@@ -401,6 +404,16 @@ function ReportSectionDialog({
     !isSending &&
     cleanReportText(draft).length > 0 &&
     (mode === "chat" || selectedReportText.length > 0);
+  const modeTitle = mode === "refine" ? "Refine" : "Chat";
+  const modeHelp =
+    mode === "refine"
+      ? selectedReportText
+        ? "Selected text is ready for an in-place edit."
+        : "Select text in the finding to edit it."
+      : "Ask about this section.";
+  const draftPlaceholder =
+    mode === "refine" ? "Describe the edit" : "Ask about this section";
+  const submitLabel = mode === "refine" ? "Refine" : "Ask";
 
   useEffect(() => {
     setDraft("");
@@ -513,131 +526,76 @@ function ReportSectionDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-4xl"
+        className="h-[min(92vh,860px)] max-h-[92vh] w-[calc(100vw-1rem)] max-w-none grid-rows-[auto,minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:w-[min(96vw,72rem)] sm:max-w-none"
         data-testid="report-section-dialog"
       >
-        <DialogHeader className="border-border/70 border-b p-4 pr-12">
-          <div className="flex flex-wrap items-center gap-2">
-            <SeverityBadge severity={section.severity} />
-            <span className="rounded-full border border-border/70 bg-card/55 px-2 py-0.5 text-muted-foreground text-xs">
-              {sectionTypeLabel(section.type)}
-            </span>
+        <DialogHeader className="border-border/70 border-b bg-popover/95 p-4 pr-12 backdrop-blur">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <SeverityBadge severity={section.severity} />
+                <span className="rounded-full border border-border/70 bg-card/55 px-2 py-0.5 text-muted-foreground text-xs">
+                  {sectionTypeLabel(section.type)}
+                </span>
+              </div>
+              <DialogTitle className="text-balance text-xl leading-tight">
+                {cleanReportText(section.title, "Untitled section")}
+              </DialogTitle>
+            </div>
+            <div className="hidden max-w-64 rounded-md border border-border/70 bg-background/55 px-3 py-2 text-xs sm:block">
+              <span className="block font-medium text-muted-foreground">Report</span>
+              <span className="mt-1 line-clamp-2 text-foreground">{reportTitle}</span>
+            </div>
           </div>
-          <DialogTitle className="text-xl leading-tight">
-            {cleanReportText(section.title, "Untitled section")}
-          </DialogTitle>
           <DialogDescription className="sr-only">
             Report section detail and follow-up chat
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[calc(90vh-4rem)] overflow-y-auto">
-          <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_21rem]">
+        <div className="grid min-h-0 overflow-y-auto bg-background/35 lg:grid-cols-[minmax(0,1fr)_24rem] lg:overflow-hidden">
+          <div className="min-h-0 p-4 lg:overflow-y-auto">
             <div
-              className="min-w-0 rounded-lg border border-border/70 bg-card/55 p-4"
+              className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-card/65"
               data-testid="report-section-content"
               onMouseUp={() => captureSelection("report")}
             >
-              <div className="mb-2 flex items-center gap-2 text-muted-foreground text-xs">
-                <SparklesIcon className="size-3.5 text-brand-accent" />
-                Finding
+              <div className="flex items-center justify-between gap-3 border-border/70 border-b px-4 py-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <SparklesIcon className="size-3.5 shrink-0 text-brand-accent" />
+                  <span className="font-medium text-muted-foreground text-xs">Finding</span>
+                </div>
+                <span className="shrink-0 text-muted-foreground text-xs">
+                  {sectionTypeLabel(section.type)}
+                </span>
               </div>
-              <p className="whitespace-pre-wrap text-sm leading-6">
-                {cleanReportText(section.content)}
-              </p>
-              <CitationChips section={section} />
+              <div className="p-4">
+                <p className="whitespace-pre-wrap text-sm leading-6">
+                  {cleanReportText(section.content)}
+                </p>
+                <CitationChips section={section} />
+              </div>
             </div>
-            <div className="min-w-0 space-y-3">
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
               <SectionImpactPanel section={section} />
               <SectionDataPanel section={section} />
             </div>
           </div>
 
-          <section className="border-border/70 border-t bg-background/45 p-4">
-            <div className="flex items-center gap-2">
-              <MessageSquareTextIcon className="size-4 text-brand-accent" />
-              <h5 className="font-medium text-sm">Chat</h5>
-            </div>
-            <div
-              ref={chatLogRef}
-              className="mt-3 max-h-72 min-h-32 overflow-y-auto rounded-lg border border-border/70 bg-card/55 p-3 sm:max-h-80"
-              data-testid="report-section-chat-log"
-              onMouseUp={() => captureSelection("chat")}
-              aria-live="polite"
-            >
-              {messages.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No questions yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={cn(
-                        "rounded-lg p-3",
-                        message.role === "assistant" ? "bg-background/70" : "bg-brand-accent/10",
-                      )}
-                    >
-                      <span className="mb-1 block font-medium text-muted-foreground text-xs">
-                        {message.status === "error"
-                          ? "Error"
-                          : message.role === "assistant"
-                            ? message.mode === "refine"
-                              ? "Refined text"
-                              : "Response"
-                            : message.mode === "refine"
-                              ? "Refine request"
-                              : "You"}
-                      </span>
-                      {message.quote && (
-                        <blockquote className="mb-2 border-brand-accent/60 border-l-2 pl-2 text-muted-foreground text-xs leading-5">
-                          {message.quote}
-                        </blockquote>
-                      )}
-                      <p className="whitespace-pre-wrap text-sm leading-6">
-                        {message.content ||
-                          (message.status === "sending" ? "Thinking..." : "Waiting for response")}
-                      </p>
-                      {(message.status === "sending" || message.status === "streaming") && (
-                        <span className="mt-2 inline-flex items-center gap-1 text-muted-foreground text-xs">
-                          <ActivityIcon className="size-3 motion-safe:animate-pulse" />
-                          {message.status === "sending" ? "Sending" : "Responding"}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {selection && (
-              <div
-                className="mt-3 rounded-lg border border-brand-accent/30 bg-brand-accent/10 p-3"
-                data-testid="report-section-selected-text"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <span className="block font-medium text-brand-accent text-xs">
-                      {selection.source === "report" ? "Selected report text" : "Selected excerpt"}
-                    </span>
-                    <p className="mt-1 line-clamp-3 text-muted-foreground text-xs leading-5">
-                      {selection.text}
-                    </p>
+          <section className="flex min-h-[30rem] flex-col border-border/70 border-t bg-card/35 lg:min-h-0 lg:border-l lg:border-t-0">
+            <div className="shrink-0 border-border/70 border-b p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex items-center gap-2">
+                    {mode === "refine" ? (
+                      <PenLineIcon className="size-4 text-brand-accent" />
+                    ) : (
+                      <MessageSquareTextIcon className="size-4 text-brand-accent" />
+                    )}
+                    <h5 className="font-medium text-sm">{modeTitle}</h5>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelection(null)}
-                  >
-                    Clear
-                  </Button>
+                  <p className="text-muted-foreground text-xs leading-5">{modeHelp}</p>
                 </div>
-              </div>
-            )}
-
-            <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={submitQuestion}>
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="inline-flex rounded-md border border-border/70 bg-background/60 p-0.5">
+                <div className="inline-flex rounded-md border border-border/70 bg-background/70 p-0.5">
                   <Button
                     type="button"
                     variant={mode === "chat" ? "default" : "ghost"}
@@ -646,6 +604,7 @@ function ReportSectionDialog({
                     aria-label="Chat mode"
                     onClick={() => setMode("chat")}
                   >
+                    <MessageSquareTextIcon className="size-3.5" />
                     Chat
                   </Button>
                   <Button
@@ -656,26 +615,137 @@ function ReportSectionDialog({
                     aria-label="Refine mode"
                     onClick={() => setMode("refine")}
                   >
+                    <PenLineIcon className="size-3.5" />
                     Refine
                   </Button>
                 </div>
+              </div>
+            </div>
+            <div
+              ref={chatLogRef}
+              className="min-h-0 flex-1 overflow-y-auto p-3"
+              data-testid="report-section-chat-log"
+              onMouseUp={() => captureSelection("chat")}
+              aria-live="polite"
+            >
+              {messages.length === 0 ? (
+                <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed border-border/80 bg-background/45 p-4 text-center">
+                  <div className="max-w-64 space-y-2">
+                    <MessageSquareTextIcon className="mx-auto size-5 text-muted-foreground" />
+                    <p className="font-medium text-sm">No messages yet</p>
+                    <p className="text-muted-foreground text-xs leading-5">
+                      Ask about the finding, or switch to refine after selecting text.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={cn(
+                        "flex",
+                        message.role === "user" ? "justify-end" : "justify-start",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "max-w-[92%] rounded-lg border p-3",
+                          message.role === "assistant"
+                            ? "border-border/70 bg-background/80"
+                            : "border-brand-accent/20 bg-brand-accent/10",
+                          message.status === "error" && "border-destructive/40 bg-destructive/10",
+                        )}
+                      >
+                        <span className="mb-1 block font-medium text-muted-foreground text-xs">
+                          {message.status === "error"
+                            ? "Error"
+                            : message.role === "assistant"
+                              ? message.mode === "refine"
+                                ? "Refined text"
+                                : "Response"
+                              : message.mode === "refine"
+                                ? "Refine request"
+                                : "You"}
+                        </span>
+                        {message.quote && (
+                          <blockquote className="mb-2 border-brand-accent/60 border-l-2 pl-2 text-muted-foreground text-xs leading-5">
+                            {message.quote}
+                          </blockquote>
+                        )}
+                        <p className="whitespace-pre-wrap text-sm leading-6">
+                          {message.content ||
+                            (message.status === "sending" ? "Thinking..." : "Waiting for response")}
+                        </p>
+                        {(message.status === "sending" || message.status === "streaming") && (
+                          <span className="mt-2 inline-flex items-center gap-1 text-muted-foreground text-xs">
+                            <ActivityIcon className="size-3 motion-safe:animate-pulse" />
+                            {message.status === "sending" ? "Sending" : "Responding"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="shrink-0 border-border/70 border-t bg-background/80 p-3">
+              {selection ? (
+                <div
+                  className="rounded-lg border border-brand-accent/30 bg-brand-accent/10 p-3"
+                  data-testid="report-section-selected-text"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="flex items-center gap-1.5 font-medium text-brand-accent text-xs">
+                        <QuoteIcon className="size-3.5" />
+                        {selection.source === "report" ? "Selected report text" : "Selected excerpt"}
+                      </span>
+                      <p className="mt-1 line-clamp-3 text-muted-foreground text-xs leading-5">
+                        {selection.text}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelection(null)}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              ) : mode === "refine" ? (
+                <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 p-3 text-muted-foreground text-xs leading-5">
+                  Select text from the finding to enable refine.
+                </div>
+              ) : null}
+
+              <form className="mt-3 space-y-2" onSubmit={submitQuestion}>
                 <Textarea
                   aria-label="Question about report section"
-                  className="min-h-20 resize-none"
-                  placeholder={
-                    mode === "refine"
-                      ? "Select report text, then describe the edit"
-                      : "Ask about this section"
-                  }
+                  className="min-h-20 resize-none bg-card/70"
+                  placeholder={draftPlaceholder}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleDraftKeyDown}
                 />
-              </div>
-              <Button type="submit" className="sm:self-end" disabled={!canSend}>
-                {mode === "refine" ? "Refine" : "Ask"}
-              </Button>
-            </form>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 text-muted-foreground text-xs">
+                    {reportChat
+                      ? mode === "refine" && !selectedReportText
+                        ? "Select report text first"
+                        : "Ready"
+                      : "Chat unavailable"}
+                  </p>
+                  <Button type="submit" disabled={!canSend}>
+                    <SendHorizontalIcon className="size-4" />
+                    {submitLabel}
+                  </Button>
+                </div>
+              </form>
+            </div>
           </section>
         </div>
       </DialogContent>
