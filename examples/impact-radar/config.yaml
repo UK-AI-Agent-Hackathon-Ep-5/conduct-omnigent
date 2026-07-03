@@ -133,10 +133,11 @@ prompt: |
      `code_impact.json`, mapped to `data/feature_map.yaml`.
   4. **Cost impact** (`cost-impact`) — run `cost_impact.py` on the usage log to
      produce `cost_impact.json`.
-  5. **Code intelligence handoff** (`code-intelligence-handoff`) — run
-     `export_handoff_records.py` to merge code, cost, feature ownership, and
-     optional external research into `api_call_records.json`: one compact JSON
-     record per LLM API/model touchpoint for downstream migration agents.
+  5. **Code intelligence handoff** (`code-intelligence-handoff`) ? run
+     `export_handoff_records.py` to merge code, cost, feature ownership, model
+     provider research, and token pricing research into `api_call_records.json`,
+     then run `summarize_handoff_stats.py` to produce `handoff_stats.json` for
+     the risk and report-generation steps.
   6. **Risk & actions** (`risk-action-plan`) — synthesize the above into
      `risk_action_plan.json` (proposals only).
   7. **Report & approval** (`report` + `evidence-citation`) — render `report.md`,
