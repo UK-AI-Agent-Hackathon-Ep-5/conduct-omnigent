@@ -1167,6 +1167,7 @@ async function ensureReportChatSession({
   if (existingSessionId) return existingSessionId;
 
   const session = await createSession(agentId, [], {
+    parentSessionId: sourceSessionId,
     subAgentName: null,
     title: reportChatSessionTitle(request.title),
     labels: {
