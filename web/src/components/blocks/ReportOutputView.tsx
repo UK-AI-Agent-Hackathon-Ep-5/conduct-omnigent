@@ -99,11 +99,19 @@ const REPORT_SHELL_STYLE = {
 
 const REPORT_BRAND_PATTERN = /\bConduct\s+Omnigent\b/gi;
 
+type ReportDialogMode = "chat" | "refine";
+
+type ReportTextSelection = {
+  text: string;
+  source: "report" | "chat";
+};
+
 type ReportDialogMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
   quote: string | null;
+  mode?: ReportDialogMode;
   status?: "sending" | "streaming" | "done" | "error";
 };
 
@@ -119,14 +127,23 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
   const [activeId, setActiveId] = useState(report.sections[0]?.id ?? "");
   const [detailOpen, setDetailOpen] = useState(false);
   const [chatHistories, setChatHistories] = useState<Record<string, ReportDialogMessage[]>>({});
+  const [sectionContentEdits, setSectionContentEdits] = useState<Record<string, string>>({});
   const scrollerRef = useRef<HTMLDivElement>(null);
   const chatMessageIdRef = useRef(0);
   const reportChat = useReportChat();
 
-  const activeSection =
-    report.sections.find((section) => section.id === activeId) ?? report.sections[0] ?? null;
-  const counts = useMemo(() => severityCounts(report.sections), [report.sections]);
-  const totalFindings = report.sections.filter((section) => section.type !== "source").length;
+  const sections = useMemo(
+    () =>
+      report.sections.map((section) =>
+        sectionContentEdits[section.id] !== undefined
+          ? { ...section, content: sectionContentEdits[section.id]! }
+          : section,
+      ),
+    [report.sections, sectionContentEdits],
+  );
+  const activeSection = sections.find((section) => section.id === activeId) ?? sections[0] ?? null;
+  const counts = useMemo(() => severityCounts(sections), [sections]);
+  const totalFindings = sections.filter((section) => section.type !== "source").length;
   const reportTitle = cleanReportText(report.title, "Report");
   const rawTargetLabel = report.target?.name ?? report.target?.path ?? "Report target";
   const targetLabel = cleanReportText(rawTargetLabel, "Report target");
@@ -202,6 +219,16 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
         message.id === messageId ? { ...message, ...patch } : message,
       ),
     }));
+  }
+
+  function replaceSectionText(sectionId: string, selectedText: string, replacementText: string) {
+    setSectionContentEdits((prev) => {
+      const originalSection = report.sections.find((section) => section.id === sectionId);
+      const currentContent = prev[sectionId] ?? originalSection?.content ?? "";
+      const nextContent = replaceSelectedReportText(currentContent, selectedText, replacementText);
+      if (nextContent === cleanReportText(currentContent)) return prev;
+      return { ...prev, [sectionId]: nextContent };
+    });
   }
 
   return (
@@ -295,7 +322,7 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
           data-testid="report-section-strip"
           tabIndex={0}
         >
-          {report.sections.map((section) => (
+          {sections.map((section) => (
             <ReportSectionPreview
               key={section.id}
               section={section}
@@ -322,6 +349,9 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
           updateMessage={(messageId, patch) =>
             updateChatMessage(activeSection.id, messageId, patch)
           }
+          replaceSelectedText={(selectedText, replacementText) =>
+            replaceSectionText(activeSection.id, selectedText, replacementText)
+          }
         />
       )}
     </section>
@@ -339,6 +369,7 @@ function ReportSectionDialog({
   nextMessageId,
   appendMessages,
   updateMessage,
+  replaceSelectedText,
 }: {
   report: ReportOutput;
   reportTitle: string;
@@ -350,9 +381,11 @@ function ReportSectionDialog({
   nextMessageId: () => string;
   appendMessages: (messages: ReportDialogMessage[]) => void;
   updateMessage: (messageId: string, patch: ReportDialogMessagePatch) => void;
+  replaceSelectedText: (selectedText: string, replacementText: string) => void;
 }) {
+  const [mode, setMode] = useState<ReportDialogMode>("chat");
   const [draft, setDraft] = useState("");
-  const [quotedText, setQuotedText] = useState("");
+  const [selection, setSelection] = useState<ReportTextSelection | null>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
   const sanitizedReport = useMemo(
     () => ({ ...report, title: reportTitle, target: sanitizeReportTarget(report.target) }),
@@ -362,10 +395,16 @@ function ReportSectionDialog({
   const isSending = messages.some(
     (message) => message.status === "sending" || message.status === "streaming",
   );
+  const selectedReportText = selection?.source === "report" ? selection.text : "";
+  const canSend =
+    reportChat !== null &&
+    !isSending &&
+    cleanReportText(draft).length > 0 &&
+    (mode === "chat" || selectedReportText.length > 0);
 
   useEffect(() => {
     setDraft("");
-    setQuotedText("");
+    setSelection(null);
   }, [section.id]);
 
   useEffect(() => {
@@ -379,17 +418,18 @@ function ReportSectionDialog({
     }
   }, [messages, open]);
 
-  function captureSelection() {
-    const selection = selectedReportText();
-    if (selection) setQuotedText(selection);
+  function captureSelection(source: ReportTextSelection["source"]) {
+    const selectedText = selectedModalText();
+    if (selectedText) setSelection({ text: selectedText, source });
   }
 
   function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const question = cleanReportText(draft);
     if (!question || !reportChat || isSending) return;
+    if (mode === "refine" && !selectedReportText) return;
 
-    const quote = quotedText || null;
+    const quote = mode === "refine" ? selectedReportText : (selection?.text ?? null);
     const userMessageId = nextMessageId();
     const responseMessageId = nextMessageId();
     appendMessages([
@@ -398,27 +438,36 @@ function ReportSectionDialog({
         role: "user",
         content: question,
         quote,
+        mode,
       },
       {
         id: responseMessageId,
         role: "assistant",
         content: "",
         quote: null,
+        mode,
         status: "sending",
       },
     ]);
     setDraft("");
-    setQuotedText("");
-    void sendQuestion(question, quote, responseMessageId, reportChat);
+    setSelection(null);
+    void sendQuestion(question, quote, mode, responseMessageId, reportChat);
   }
 
   async function sendQuestion(
     question: string,
     quote: string | null,
+    requestMode: ReportDialogMode,
     responseMessageId: string,
     chat: ReportChatHandler,
   ): Promise<void> {
-    const message = buildReportSectionQuestion(sanitizedReport, sanitizedSection, question, quote);
+    const message = buildReportSectionQuestion(
+      sanitizedReport,
+      sanitizedSection,
+      question,
+      quote,
+      requestMode,
+    );
     try {
       const response = await chat({
         threadKey: buildReportChatThreadKey(sanitizedReport, sanitizedSection),
@@ -431,6 +480,15 @@ function ReportSectionDialog({
           });
         },
       });
+      if (requestMode === "refine" && quote) {
+        const replacementText = cleanRefinedReportText(response, quote);
+        replaceSelectedText(quote, replacementText);
+        updateMessage(responseMessageId, {
+          content: replacementText,
+          status: "done",
+        });
+        return;
+      }
       updateMessage(responseMessageId, {
         content: cleanReportText(response, "No response returned."),
         status: "done",
@@ -475,7 +533,7 @@ function ReportSectionDialog({
             <div
               className="min-w-0 rounded-lg border border-border/70 bg-card/55 p-4"
               data-testid="report-section-content"
-              onMouseUp={captureSelection}
+              onMouseUp={() => captureSelection("report")}
             >
               <div className="mb-2 flex items-center gap-2 text-muted-foreground text-xs">
                 <SparklesIcon className="size-3.5 text-brand-accent" />
@@ -501,7 +559,7 @@ function ReportSectionDialog({
               ref={chatLogRef}
               className="mt-3 max-h-72 min-h-32 overflow-y-auto rounded-lg border border-border/70 bg-card/55 p-3 sm:max-h-80"
               data-testid="report-section-chat-log"
-              onMouseUp={captureSelection}
+              onMouseUp={() => captureSelection("chat")}
               aria-live="polite"
             >
               {messages.length === 0 ? (
@@ -517,7 +575,13 @@ function ReportSectionDialog({
                       )}
                     >
                       <span className="mb-1 block font-medium text-muted-foreground text-xs">
-                        {message.role === "assistant" ? "Response" : "You"}
+                        {message.role === "assistant"
+                          ? message.mode === "refine"
+                            ? "Refined text"
+                            : "Response"
+                          : message.mode === "refine"
+                            ? "Refine request"
+                            : "You"}
                       </span>
                       {message.quote && (
                         <blockquote className="mb-2 border-brand-accent/60 border-l-2 pl-2 text-muted-foreground text-xs leading-5">
@@ -540,7 +604,7 @@ function ReportSectionDialog({
               )}
             </div>
 
-            {quotedText && (
+            {selection && (
               <div
                 className="mt-3 rounded-lg border border-brand-accent/30 bg-brand-accent/10 p-3"
                 data-testid="report-section-selected-text"
@@ -548,13 +612,18 @@ function ReportSectionDialog({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <span className="block font-medium text-brand-accent text-xs">
-                      Selected excerpt
+                      {selection.source === "report" ? "Selected report text" : "Selected excerpt"}
                     </span>
                     <p className="mt-1 line-clamp-3 text-muted-foreground text-xs leading-5">
-                      {quotedText}
+                      {selection.text}
                     </p>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setQuotedText("")}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelection(null)}
+                  >
                     Clear
                   </Button>
                 </div>
@@ -562,20 +631,44 @@ function ReportSectionDialog({
             )}
 
             <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={submitQuestion}>
-              <Textarea
-                aria-label="Question about report section"
-                className="min-h-20 flex-1 resize-none"
-                placeholder="Ask about this section"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={handleDraftKeyDown}
-              />
-              <Button
-                type="submit"
-                className="sm:self-end"
-                disabled={!reportChat || isSending || cleanReportText(draft).length === 0}
-              >
-                Ask
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="inline-flex rounded-md border border-border/70 bg-background/60 p-0.5">
+                  <Button
+                    type="button"
+                    variant={mode === "chat" ? "default" : "ghost"}
+                    size="sm"
+                    aria-pressed={mode === "chat"}
+                    aria-label="Chat mode"
+                    onClick={() => setMode("chat")}
+                  >
+                    Chat
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={mode === "refine" ? "default" : "ghost"}
+                    size="sm"
+                    aria-pressed={mode === "refine"}
+                    aria-label="Refine mode"
+                    onClick={() => setMode("refine")}
+                  >
+                    Refine
+                  </Button>
+                </div>
+                <Textarea
+                  aria-label="Question about report section"
+                  className="min-h-20 resize-none"
+                  placeholder={
+                    mode === "refine"
+                      ? "Select report text, then describe the edit"
+                      : "Ask about this section"
+                  }
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={handleDraftKeyDown}
+                />
+              </div>
+              <Button type="submit" className="sm:self-end" disabled={!canSend}>
+                {mode === "refine" ? "Refine" : "Ask"}
               </Button>
             </form>
           </section>
@@ -1167,7 +1260,19 @@ function buildReportSectionQuestion(
   section: ReportSection,
   question: string,
   quote: string | null,
+  mode: ReportDialogMode,
 ): string {
+  if (mode === "refine") {
+    return [
+      buildReportSectionQuote(report, section),
+      quote ? `Selected report text:\n${quote}` : null,
+      "Task:\nRewrite only the selected report text. Return only the replacement text, with no explanation or markdown fence. Keep the same factual meaning unless the edit request asks for a specific change.",
+      `Edit request:\n${question}`,
+    ]
+      .filter((line): line is string => line !== null)
+      .join("\n\n");
+  }
+
   return [
     buildReportSectionQuote(report, section),
     quote ? `Selected text:\n${quote}` : null,
@@ -1182,9 +1287,28 @@ function buildReportChatThreadKey(report: ReportOutput, section: ReportSection):
   return `${reportKey}:${section.id}`;
 }
 
-function selectedReportText(): string {
+function selectedModalText(): string {
   if (typeof window === "undefined") return "";
   return cleanReportText(window.getSelection()?.toString() ?? "");
+}
+
+function cleanRefinedReportText(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  const fenced = trimmed.match(/^```(?:\w+)?\s*([\s\S]*?)\s*```$/);
+  return cleanReportText(fenced?.[1] ?? trimmed, fallback);
+}
+
+function replaceSelectedReportText(content: string, selectedText: string, replacementText: string) {
+  const source = cleanReportText(content);
+  const selected = cleanReportText(selectedText);
+  const replacement = cleanRefinedReportText(replacementText, selected);
+  if (!source || !selected || !replacement) return source;
+
+  const index = source.indexOf(selected);
+  if (index < 0) return source;
+  return cleanReportText(
+    `${source.slice(0, index)}${replacement}${source.slice(index + selected.length)}`,
+  );
 }
 
 function cleanReportText(value: string, fallback = ""): string {

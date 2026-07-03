@@ -207,4 +207,53 @@ describe("ReportOutputView", () => {
     ).toBeDefined();
     selectionSpy.mockRestore();
   });
+
+  it("refines selected report text in the shared modal chat", async () => {
+    const replacement = "Three provider references need review before release.";
+    const onReportChat = vi.fn(async (request: ReportChatRequest) => {
+      expect(request.message).toContain(
+        "Selected report text:\nThree model references need review before release.",
+      );
+      expect(request.message).toContain("Return only the replacement text");
+      expect(request.message).toContain("Edit request:\nMake this clearer");
+      return replacement;
+    });
+    let selectedText = "";
+    const selectionSpy = vi.spyOn(window, "getSelection").mockImplementation(
+      () =>
+        ({
+          toString: () => selectedText,
+        }) as unknown as Selection,
+    );
+
+    render(
+      <ReportChatProvider value={onReportChat}>
+        <ReportOutputView report={REPORT} enablePixi={false} />
+      </ReportChatProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
+    fireEvent.click(screen.getByLabelText("Refine mode"));
+    const textarea = screen.getByLabelText("Question about report section");
+    fireEvent.change(textarea, { target: { value: "Make this clearer" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(onReportChat).not.toHaveBeenCalled();
+
+    selectedText = "Three model references need review before release.";
+    fireEvent.mouseUp(screen.getByTestId("report-section-content"));
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(onReportChat).toHaveBeenCalledTimes(1));
+    const content = screen.getByTestId("report-section-content");
+    expect(within(content).getByText(replacement)).toBeDefined();
+    expect(within(content).queryByText("Three model references need review before release.")).toBe(
+      null,
+    );
+    const chatLog = screen.getByTestId("report-section-chat-log");
+    expect(within(chatLog).getByText("Refine request")).toBeDefined();
+    expect(within(chatLog).getByText("Refined text")).toBeDefined();
+    expect(within(chatLog).getByText(replacement)).toBeDefined();
+
+    selectionSpy.mockRestore();
+  });
 });
