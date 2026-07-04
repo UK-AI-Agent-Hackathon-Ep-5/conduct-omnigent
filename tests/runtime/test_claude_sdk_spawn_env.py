@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 import yaml as _yaml
 
-from omnigent.runtime.workflow import _build_claude_sdk_spawn_env
+from omnigent.runtime.workflow import AGENT_BUNDLE_DIR_ENV_VAR, _build_claude_sdk_spawn_env
 from omnigent.spec.types import (
     AgentSpec,
     ApiKeyAuth,
@@ -69,6 +69,14 @@ def _make_spec(
         executor=ExecutorSpec(type="omnigent", config=config, model=model, auth=auth),
         llm=LLMConfig(model=model) if model is not None else None,
     )
+
+
+def test_workdir_threads_into_generic_bundle_dir_env(tmp_path: Path) -> None:
+    """Claude SDK gets both the harness-specific and generic bundle root env vars."""
+    env = _build_claude_sdk_spawn_env(_make_spec(), workdir=tmp_path)
+
+    assert env["HARNESS_CLAUDE_SDK_BUNDLE_DIR"] == str(tmp_path)
+    assert env[AGENT_BUNDLE_DIR_ENV_VAR] == str(tmp_path)
 
 
 def test_databricks_auth_sets_databricks_env_vars() -> None:

@@ -320,6 +320,7 @@ class _HelperProcessClient:
         start_in_scratch: bool = False,
         egress_rules: list[str] | None = None,
         egress_allow_private_destinations: bool = False,
+        extra_env: Mapping[str, str] | None = None,
     ) -> None:
         self.cwd = cwd
         self.shell_path = shell_path
@@ -327,6 +328,7 @@ class _HelperProcessClient:
         self.start_in_scratch = start_in_scratch
         self._egress_rules = egress_rules
         self._egress_allow_private_destinations = egress_allow_private_destinations
+        self._extra_env = dict(extra_env or {})
         # S4 (security): per-helper Proxy-Authorization token,
         # generated in :meth:`_start_egress_proxy_locked` and read by
         # the config-FD writer in :meth:`_start_locked`. ``None``
@@ -407,6 +409,8 @@ class _HelperProcessClient:
     def _start_locked(self) -> None:
         sandbox = self.sandbox
         env = build_helper_env(os.environ, sandbox)
+        if self._extra_env:
+            env.update(strip_runner_auth_secrets(self._extra_env))
         project_root = str(_project_root())
         existing_pythonpath = env.get("PYTHONPATH")
         env["PYTHONPATH"] = (
@@ -793,6 +797,7 @@ class CallerProcessOSEnvironment(OSEnvironment):
             start_in_scratch=self._start_in_scratch,
             egress_rules=self._egress_rules,
             egress_allow_private_destinations=self._egress_allow_private_destinations,
+            extra_env=self.spec.env,
         )
 
     async def read(

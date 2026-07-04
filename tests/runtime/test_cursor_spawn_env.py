@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from omnigent.runtime.workflow import _build_cursor_spawn_env
+from omnigent.runtime.workflow import AGENT_BUNDLE_DIR_ENV_VAR, _build_cursor_spawn_env
 from omnigent.spec.types import (
     AgentSpec,
     ApiKeyAuth,
@@ -135,12 +135,14 @@ def test_workdir_threads_into_bundle_dir_env_var(tmp_path: Path) -> None:
     """A bundle ``workdir`` is forwarded as ``HARNESS_CURSOR_BUNDLE_DIR``."""
     env = _build_cursor_spawn_env(_make_spec(), workdir=tmp_path)
     assert env["HARNESS_CURSOR_BUNDLE_DIR"] == str(tmp_path)
+    assert env[AGENT_BUNDLE_DIR_ENV_VAR] == str(tmp_path)
 
 
 def test_no_workdir_omits_bundle_dir_env_var() -> None:
     """No ``workdir`` omits ``HARNESS_CURSOR_BUNDLE_DIR``."""
     env = _build_cursor_spawn_env(_make_spec())
     assert "HARNESS_CURSOR_BUNDLE_DIR" not in env
+    assert AGENT_BUNDLE_DIR_ENV_VAR not in env
 
 
 def _write_cursor_config(tmp_path: Path, ref: str) -> None:

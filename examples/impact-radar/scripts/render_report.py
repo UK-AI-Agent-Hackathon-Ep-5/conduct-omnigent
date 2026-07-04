@@ -35,7 +35,10 @@ def render(run_dir: Path, run_id: str) -> str:
     sources = _load(run_dir, "source_cards.json", [])
     api_call_records = _load(run_dir, "api_call_records.json", {})
     handoff_stats = _load(run_dir, "handoff_stats.json", {})
-    call_records = api_call_records.get("records", []) if isinstance(api_call_records, dict) else []
+    risk_inputs = _load(run_dir, "risk_inputs.json", {})
+    call_records = (
+        api_call_records.get("records", []) if isinstance(api_call_records, dict) else []
+    )
 
     out: list[str] = []
     a = out.append
@@ -56,11 +59,16 @@ def render(run_dir: Path, run_id: str) -> str:
     a(f"- **{len(affected)}** code site(s) directly affected across the scanned codebase.")
     if call_records:
         records_with_research = sum(1 for r in call_records if r.get("external_research"))
-        records_with_cost = sum(1 for r in call_records if r.get("estimated_cost_delta_usd") is not None)
-        records_needing_verification = sum(1 for r in call_records if r.get("needs_external_verification"))
+        records_with_cost = sum(
+            1 for r in call_records if r.get("estimated_cost_delta_usd") is not None
+        )
+        records_needing_verification = sum(
+            1 for r in call_records if r.get("needs_external_verification")
+        )
         a(
             f"- **{len(call_records)}** enriched API callsite record(s) prepared "
-            f"({records_with_research} with external research, {records_with_cost} with cost deltas, "
+            f"({records_with_research} with external research, "
+            f"{records_with_cost} with cost deltas, "
             f"{records_needing_verification} needing verification)."
         )
     if totals:
@@ -107,10 +115,20 @@ def render(run_dir: Path, run_id: str) -> str:
     # API callsite intelligence handoff.
     a("## API callsite intelligence\n")
     if call_records:
-        a("| Risk | Likelihood | Provider | Model | Feature | Owner | Location | Cost delta | Research | Verification gaps |")
-        a("|------|------------|----------|-------|---------|-------|----------|------------|----------|-------------------|")
+        a(
+            "| Risk | Likelihood | Provider | Model | Feature | Owner | Location "
+            "| Cost delta | Research | Verification gaps |"
+        )
+        a(
+            "|------|------------|----------|-------|---------|-------|----------"
+            "|------------|----------|-------------------|"
+        )
         risk_order = {"high": 0, "medium": 1, "low": 2, "info": 3}
-        for record in sorted(call_records, key=lambda r: risk_order.get(r.get("migration_risk"), 4))[:20]:
+        sorted_records = sorted(
+            call_records,
+            key=lambda r: risk_order.get(r.get("migration_risk"), 4),
+        )
+        for record in sorted_records[:20]:
             feature = record.get("feature") or {}
             research = record.get("external_research") or {}
             needs = record.get("needs_external_verification") or []
@@ -144,7 +162,10 @@ def render(run_dir: Path, run_id: str) -> str:
         a(f"| Change cards | {input_summary.get('change_card_count', 0)} |")
         a(f"| Code findings | {input_summary.get('code_finding_count', 0)} |")
         a(f"| Cost rows | {input_summary.get('cost_row_count', 0)} |")
-        a(f"| External model research entries | {input_summary.get('external_model_research_count', 0)} |")
+        a(
+            "| External model research entries "
+            f"| {input_summary.get('external_model_research_count', 0)} |"
+        )
         a(f"| Output callsite records | {output_summary.get('record_count', 0)} |")
         a(f"| Output dimensions | {output_summary.get('dimension_count', 0)} |")
         a("")
@@ -154,10 +175,45 @@ def render(run_dir: Path, run_id: str) -> str:
             a("| Source group | File | Origin |")
             a("|--------------|------|--------|")
             for name, meta in sources_map.items():
-                a(f"| {name} | `{meta.get('file', 'unknown')}` | {meta.get('source', 'unknown')} |")
+                a(
+                    f"| {name} | `{meta.get('file', 'unknown')}` "
+                    f"| {meta.get('source', 'unknown')} |"
+                )
             a("")
     else:
         a("_No handoff statistics supplied._")
+    a("")
+
+    # Bounded model-facing payload.
+    a("## Bounded risk-planning inputs\n")
+    if risk_inputs:
+        a("| Area | Count |")
+        a("|------|------:|")
+        a(f"| Source callsite records | {risk_inputs.get('source_record_count', 0)} |")
+        a(f"| Candidate records | {risk_inputs.get('candidate_record_count', 0)} |")
+        a(f"| Selected records | {risk_inputs.get('selected_record_count', 0)} |")
+        a(f"| Selection limit | {risk_inputs.get('selection_limit', 0)} |")
+        a(f"| Omitted candidates | {risk_inputs.get('omitted_candidate_count', 0)} |")
+        selected = risk_inputs.get("records", [])
+        if selected:
+            a("")
+            a("| Risk | Provider | Model | Owner | Location | Verification gaps |")
+            a("|------|----------|-------|-------|----------|-------------------|")
+            for record in selected[:10]:
+                feature = record.get("feature") or {}
+                needs = record.get("needs_external_verification") or []
+                a(
+                    f"| {record.get('migration_risk', 'unknown')} "
+                    f"| {record.get('provider', 'unknown')} "
+                    f"| `{record.get('model_name', 'unknown')}` "
+                    f"| {feature.get('owner') or 'unknown'} "
+                    f"| `{record.get('code_location', 'unknown')}` "
+                    f"| {', '.join(needs) if needs else 'none'} |"
+                )
+            if len(selected) > 10:
+                a(f"\n_Showing top 10 of {len(selected)} risk-planning records._")
+    else:
+        a("_No bounded risk-planning payload supplied._")
     a("")
 
     # Cost impact.

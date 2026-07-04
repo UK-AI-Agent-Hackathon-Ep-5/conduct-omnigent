@@ -2015,6 +2015,7 @@ def test_clone_os_env_spec_preserves_all_sandbox_fields() -> None:
         sandbox=sandbox,
         fork=True,
         start_in_scratch=True,
+        env={"CUSTOM_RUNTIME_FLAG": "1"},
     )
 
     clone = _clone_os_env_spec(spec)
@@ -2041,6 +2042,8 @@ def test_clone_os_env_spec_preserves_all_sandbox_fields() -> None:
             f"{name} must be a new list so later mutation of the clone "
             "does not leak into the original spec."
         )
+    assert clone.env == spec.env
+    assert clone.env is not spec.env
 
 
 def test_effective_runner_os_env_defaults_when_spec_has_no_os_env(monkeypatch) -> None:
@@ -2090,6 +2093,76 @@ def test_effective_runner_os_env_uses_cli_workspace_when_spec_has_no_os_env(
     assert os_env.type == "caller_process"
     assert Path(os_env.cwd) == workspace.resolve()
     assert not (tmp_path / "fallback").exists()
+
+
+def test_effective_runner_os_env_exposes_agent_bundle_dir(
+    tmp_path: Path,
+) -> None:
+    """Shell tools see the bundle root while staying in the selected workspace."""
+    from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec
+    from omnigent.runner.tool_dispatch import (
+        AGENT_BUNDLE_DIR_ENV_VAR,
+        _effective_runner_os_env_spec,
+    )
+    from omnigent.spec.types import AgentSpec
+
+    workspace = tmp_path / "selected-repo"
+    bundle = tmp_path / "agent-bundle"
+    workspace.mkdir()
+    bundle.mkdir()
+    spec = AgentSpec(
+        spec_version=1,
+        os_env=OSEnvSpec(
+            type="caller_process",
+            cwd=".",
+            sandbox=OSEnvSandboxSpec(type="none"),
+        ),
+    )
+
+    os_env = _effective_runner_os_env_spec(
+        spec,
+        "conv_bundle_dir",
+        runner_workspace=workspace.resolve(),
+        agent_bundle_dir=bundle.resolve(),
+    )
+
+    assert Path(os_env.cwd) == workspace.resolve()
+    assert os_env.env == {AGENT_BUNDLE_DIR_ENV_VAR: str(bundle.resolve())}
+
+
+@pytest.mark.asyncio
+async def test_os_shell_receives_agent_bundle_dir_env(tmp_path: Path) -> None:
+    """The helper subprocess receives ``OMNIGENT_AGENT_BUNDLE_DIR``."""
+    from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec
+    from omnigent.runner.tool_dispatch import execute_tool
+    from omnigent.spec.types import AgentSpec
+    from omnigent.tools.builtins.os_env import SysOsShellTool
+
+    workspace = tmp_path / "selected-repo"
+    bundle = tmp_path / "agent-bundle"
+    workspace.mkdir()
+    bundle.mkdir()
+    spec = AgentSpec(
+        spec_version=1,
+        os_env=OSEnvSpec(
+            type="caller_process",
+            cwd=".",
+            sandbox=OSEnvSandboxSpec(type="none"),
+        ),
+    )
+
+    output = await execute_tool(
+        tool_name=SysOsShellTool.name(),
+        arguments=json.dumps({"command": 'printf "%s" "$OMNIGENT_AGENT_BUNDLE_DIR"'}),
+        agent_spec=spec,
+        agent_bundle_dir=bundle.resolve(),
+        conversation_id="conv_bundle_shell",
+        runner_workspace=workspace.resolve(),
+    )
+
+    result = json.loads(output)
+    assert result["exit_code"] == 0
+    assert result["stdout"] == str(bundle.resolve())
 
 
 def test_effective_runner_os_env_runner_workspace_overrides_absolute_spec_cwd(

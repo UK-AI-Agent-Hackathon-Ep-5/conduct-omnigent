@@ -21,7 +21,7 @@ asks you** before any tool call that writes a file **outside `runs/`** (i.e.
 touches your real codebase) or runs **`git push`**. Normal work — reading code,
 running `python3 scripts/*`, writing artifacts under `runs/` — is never
 interrupted, and the catastrophic set (force-push, `rm -rf /`, hard-reset) stays
-denied outright by `blast_radius`. The gate is on the orchestrator only; the
+denied outright by `blast_radius`. The gate is on the orchestrator only. The
 sub-agents run headless (can't answer a prompt), so they stay read-only by prompt
 + `blast_radius`.
 
@@ -32,9 +32,10 @@ official pricing / deprecation sources   (researcher sub-agent, live web + citat
         └─► change cards        extract_change_cards.py
                 └─► code impact  scan_code.py     (code-scanner sub-agent, read-only)
                 └─► cost impact  cost_impact.py   (usage log × pricing)
-                        └─► risk & action plan
+                        └─► bounded risk inputs   prepare_risk_inputs.py
+                                └─► risk & action plan
                                 └─► report.md + approval_log.md
-                                      (reviewer sub-agent fact-checks; you approve)
+                                      (reviewer sub-agent fact-checks and you approve)
 ```
 
 ## Layout
@@ -54,7 +55,7 @@ The researcher runs a bounded **deep-research loop** inspired by
 [gpt-researcher](https://github.com/assafelovic/gpt-researcher) — *plan queries →
 search → deepen on gaps* — but adapted to our domain: it curates sources by
 **authority** (is this the official page?) instead of by breadth (how many pages
-agree). The loop and its scoring are deterministic bundle scripts; no external
+agree). The loop and its scoring are deterministic bundle scripts. No external
 research engine is required.
 
 ```
@@ -105,10 +106,14 @@ The script layer is the source of truth for the numbers and runs on its own:
 
 ```bash
 cd examples/impact-radar
-RUN=runs/manual; mkdir -p $RUN
+RUN=runs/manual
+mkdir -p $RUN
 python3 scripts/extract_change_cards.py --pricing-dir data/pricing --out $RUN/change_cards.json
 python3 scripts/scan_code.py --repo data/demo_codebase --change-cards $RUN/change_cards.json --out $RUN/code_impact.json
 python3 scripts/cost_impact.py --usage data/usage_log.csv --pricing-dir data/pricing --out $RUN/cost_impact.json
+python3 scripts/export_handoff_records.py --code $RUN/code_impact.json --feature-map data/feature_map.yaml --cost $RUN/cost_impact.json --external-research data/external_research.example.json --repo data/demo_codebase --out $RUN/api_call_records.json
+python3 scripts/summarize_handoff_stats.py --api-call-records $RUN/api_call_records.json --change-cards $RUN/change_cards.json --code-impact $RUN/code_impact.json --cost-impact $RUN/cost_impact.json --external-research data/external_research.example.json --out $RUN/handoff_stats.json
+python3 scripts/prepare_risk_inputs.py --api-call-records $RUN/api_call_records.json --handoff-stats $RUN/handoff_stats.json --out $RUN/risk_inputs.json
 python3 scripts/render_report.py --run-dir $RUN
 ```
 

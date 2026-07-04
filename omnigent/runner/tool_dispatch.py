@@ -100,6 +100,7 @@ _SUBAGENT_POLICY_STATUSES = frozenset({"completed", "failed"})
 _SUBAGENT_INBOX_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 _SUBAGENT_POLICY_FAILURE_OUTPUT = "[Result suppressed by policy: policy evaluation failed]"
 _SESSION_WRAPPER_LABEL_KEY = "omnigent.wrapper"
+AGENT_BUNDLE_DIR_ENV_VAR = "OMNIGENT_AGENT_BUNDLE_DIR"
 # Read budget for runner→server message-send POSTs that are gated at the
 # recipient's REQUEST phase, which can PARK behind a human-approval ASK gate
 # (e.g. session_cost_budget) for the deciding policy's ``ask_timeout``. Held at
@@ -3976,6 +3977,7 @@ async def execute_tool(
     terminal_registry: Any | None = None,
     resource_registry: Any | None = None,
     agent_spec: Any | None = None,
+    agent_bundle_dir: Path | None = None,
     conversation_id: str | None = None,
     task_id: str | None = None,
     agent_id: str | None = None,
@@ -3998,6 +4000,8 @@ async def execute_tool(
 
     :param tool_name: Tool to execute, e.g. ``"sys_os_shell"``.
     :param arguments: JSON-encoded arguments string.
+    :param agent_bundle_dir: Extracted bundle root for scripts or
+        bundled data used by the agent.
     :param publish_event: Callback that puts an SSE event on the
         runner's per-session outbound queue. ``None`` from
         dispatch sites that don't need event emission (e.g.
@@ -4029,6 +4033,7 @@ async def execute_tool(
                 tool_name,
                 args,
                 agent_spec=agent_spec,
+                agent_bundle_dir=agent_bundle_dir,
                 conversation_id=conversation_id,
                 runner_workspace=runner_workspace,
                 filesystem_registry=filesystem_registry,
@@ -4075,6 +4080,7 @@ async def execute_tool(
                 terminal_registry=terminal_registry,
                 resource_registry=resource_registry,
                 agent_spec=agent_spec,
+                agent_bundle_dir=agent_bundle_dir,
                 conversation_id=conversation_id,
                 task_id=task_id,
                 agent_id=agent_id,
@@ -4264,6 +4270,7 @@ async def dispatch_tool_locally(
     terminal_registry: Any | None = None,
     resource_registry: Any | None = None,
     agent_spec: Any | None = None,
+    agent_bundle_dir: Path | None = None,
     conversation_id: str | None = None,
     task_id: str | None = None,
     agent_id: str | None = None,
@@ -4280,6 +4287,8 @@ async def dispatch_tool_locally(
     :param runner_workspace: Optional CLI launch workspace used to
         resolve placeholder cwd values for runner-owned filesystem
         tools.
+    :param agent_bundle_dir: Extracted bundle root for scripts or
+        bundled data used by the agent.
     :param mcp_manager: When set, dispatch via
         :meth:`RunnerMcpManager.call_tool`. Caller (proxy_stream)
         passes this only for MCP-owned tools.
@@ -4304,6 +4313,7 @@ async def dispatch_tool_locally(
         terminal_registry=terminal_registry,
         resource_registry=resource_registry,
         agent_spec=agent_spec,
+        agent_bundle_dir=agent_bundle_dir,
         conversation_id=conversation_id,
         task_id=task_id,
         agent_id=agent_id,
@@ -4395,7 +4405,8 @@ def _clone_os_env_spec(spec: Any) -> Any:
             ),
             egress_rules=list(sandbox.egress_rules) if sandbox.egress_rules is not None else None,
         )
-    return dataclasses.replace(spec, sandbox=sandbox_copy)
+    env_copy = dict(spec.env) if getattr(spec, "env", None) is not None else None
+    return dataclasses.replace(spec, sandbox=sandbox_copy, env=env_copy)
 
 
 def _runner_default_os_env_cwd(conversation_id: str | None) -> str:
@@ -4420,6 +4431,7 @@ def _effective_runner_os_env_spec(
     agent_spec: Any | None,
     conversation_id: str | None,
     runner_workspace: Path | None = None,
+    agent_bundle_dir: Path | None = None,
 ) -> Any:
     """
     Build the OSEnvSpec used by runner-local sys_os_* dispatch.
@@ -4447,9 +4459,19 @@ def _effective_runner_os_env_spec(
     :param runner_workspace: Authoritative runtime cwd for the
         runner, sourced from ``OMNIGENT_RUNNER_WORKSPACE``.
         Overrides the spec's cwd when set.
+    :param agent_bundle_dir: Extracted bundle root exposed to shell
+        tools as ``OMNIGENT_AGENT_BUNDLE_DIR`` when available.
     :returns: An ``OSEnvSpec`` with a concrete cwd.
     """
     from omnigent.inner.datamodel import OSEnvSpec
+
+    def add_bundle_env(spec: Any) -> Any:
+        if agent_bundle_dir is None:
+            return spec
+        env = dict(getattr(spec, "env", None) or {})
+        env[AGENT_BUNDLE_DIR_ENV_VAR] = str(agent_bundle_dir)
+        spec.env = env
+        return spec
 
     configured = getattr(agent_spec, "os_env", None) if agent_spec is not None else None
     if configured is not None:
@@ -4463,13 +4485,13 @@ def _effective_runner_os_env_spec(
             # the per-conversation tmpdir so multiple sessions
             # don't collide on a shared default cwd.
             spec.cwd = _runner_default_os_env_cwd(conversation_id)
-        return spec
+        return add_bundle_env(spec)
     cwd = (
         str(runner_workspace)
         if runner_workspace is not None
         else _runner_default_os_env_cwd(conversation_id)
     )
-    return OSEnvSpec(type="caller_process", cwd=cwd)
+    return add_bundle_env(OSEnvSpec(type="caller_process", cwd=cwd))
 
 
 async def _seed_os_env_snapshot(
@@ -4507,6 +4529,7 @@ async def _execute_os_env_tool(
     args: dict[str, Any],
     *,
     agent_spec: Any | None = None,
+    agent_bundle_dir: Path | None = None,
     conversation_id: str | None = None,
     runner_workspace: Path | None = None,
     filesystem_registry: FilesystemRegistry | None = None,
@@ -4518,6 +4541,8 @@ async def _execute_os_env_tool(
     :param args: Parsed tool-call arguments.
     :param agent_spec: Agent spec resolved for the current turn, or
         ``None`` when unavailable.
+    :param agent_bundle_dir: Extracted bundle root exposed to shell
+        tools as ``OMNIGENT_AGENT_BUNDLE_DIR`` when available.
     :param conversation_id: Conversation id used for the fallback
         workspace, e.g. ``"conv_123"``.
     :param runner_workspace: Optional CLI launch workspace used for
@@ -4535,7 +4560,12 @@ async def _execute_os_env_tool(
     os_env = None
     try:
         os_env = create_os_environment(
-            _effective_runner_os_env_spec(agent_spec, conversation_id, runner_workspace)
+            _effective_runner_os_env_spec(
+                agent_spec,
+                conversation_id,
+                runner_workspace,
+                agent_bundle_dir=agent_bundle_dir,
+            )
         )
         if os_env is None:
             return "Error: unable to create OSEnvironment"
@@ -5105,6 +5135,7 @@ async def _execute_async_inbox_tool(
     terminal_registry: Any | None,
     resource_registry: Any | None,
     agent_spec: Any | None,
+    agent_bundle_dir: Path | None,
     conversation_id: str | None,
     task_id: str | None,
     agent_id: str | None,
@@ -5151,6 +5182,7 @@ async def _execute_async_inbox_tool(
             terminal_registry=terminal_registry,
             resource_registry=resource_registry,
             agent_spec=agent_spec,
+            agent_bundle_dir=agent_bundle_dir,
             conversation_id=conversation_id,
             task_id=task_id,
             agent_id=agent_id,
@@ -5535,6 +5567,7 @@ def _spawn_async_tool(
     terminal_registry: Any | None,
     resource_registry: Any | None,
     agent_spec: Any | None,
+    agent_bundle_dir: Path | None,
     conversation_id: str | None,
     task_id: str | None,
     agent_id: str | None,
@@ -5593,6 +5626,7 @@ def _spawn_async_tool(
                 terminal_registry=terminal_registry,
                 resource_registry=resource_registry,
                 agent_spec=agent_spec,
+                agent_bundle_dir=agent_bundle_dir,
                 conversation_id=conversation_id,
                 task_id=task_id,
                 agent_id=agent_id,

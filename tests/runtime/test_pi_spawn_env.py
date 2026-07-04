@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from omnigent.runtime.workflow import _build_pi_spawn_env
+from omnigent.runtime.workflow import AGENT_BUNDLE_DIR_ENV_VAR, _build_pi_spawn_env
 from omnigent.spec.types import AgentSpec, ExecutorSpec, LLMConfig
 
 
@@ -73,6 +73,7 @@ def test_pi_spawn_env_threads_cwd_separately_from_bundle_dir(tmp_path: Path) -> 
 
     assert env["HARNESS_PI_CWD"] == str(workspace)
     assert env["HARNESS_PI_BUNDLE_DIR"] == str(bundle_dir)
+    assert env[AGENT_BUNDLE_DIR_ENV_VAR] == str(bundle_dir)
 
 
 def _ucode_state_for_pi(

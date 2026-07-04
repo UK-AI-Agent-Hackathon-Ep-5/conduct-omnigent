@@ -25,29 +25,29 @@ Work inside the run directory you were given (`runs/<run_id>/`). Let `L` = 0.
 
 1. **Plan (level L).**
    ```
-   python3 examples/impact-radar/scripts/plan_queries.py \
+   python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/plan_queries.py" \
      --provider <provider> --facets all \
-     --registry examples/impact-radar/data/provider_registry.json \
+     --registry "$OMNIGENT_AGENT_BUNDLE_DIR/data/provider_registry.json" \
      --breadth 4 --depth-level 0 --out runs/<run_id>/query_plan.json
    ```
 2. **Search** each query with the live web-search adapter (Tavily REST):
    ```
-   python3 examples/impact-radar/scripts/adapters/search.py "<query>" \
+   python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/adapters/search.py" "<query>" \
      --domains <comma-separated official domains> --max 5 --raw
    ```
    It reads `TAVILY_API_KEY` from the environment or the bundle's gitignored
    `.env`. If it returns `"error": "no_api_key"` or empty `results`, fall back to
    fetching the registry's `seed_pages` directly:
-   `python3 examples/impact-radar/scripts/adapters/fetch.py <url>`.
+   `python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/adapters/fetch.py" <url>`.
    Turn hits into candidate `source_cards.json` (one card per page: `source_id`,
    `provider`, `url`, `title`, `source_type`, `retrieved_at`, and a
    `content_hash` from the returned text). Use the **real URLs search returned** —
    never invent them.
 3. **Curate by authority.**
    ```
-   python3 examples/impact-radar/scripts/score_sources.py \
+   python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/score_sources.py" \
      --sources runs/<run_id>/source_cards.json \
-     --registry examples/impact-radar/data/provider_registry.json \
+     --registry "$OMNIGENT_AGENT_BUNDLE_DIR/data/provider_registry.json" \
      --out runs/<run_id>/source_cards.json
    ```
    The script adds `score` + `usable_for` (`conclusion` ≥80 / `support` 60–79 /
@@ -61,9 +61,9 @@ Work inside the run directory you were given (`runs/<run_id>/`). Let `L` = 0.
 5. **Deepen.** If `unresolved.json` is non-empty and `L+1 < depth`, plan targeted
    follow-ups and repeat 2–4:
    ```
-   python3 examples/impact-radar/scripts/plan_queries.py \
+   python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/plan_queries.py" \
      --provider <provider> --gaps runs/<run_id>/unresolved.json \
-     --registry examples/impact-radar/data/provider_registry.json \
+     --registry "$OMNIGENT_AGENT_BUNDLE_DIR/data/provider_registry.json" \
      --depth-level 1 --out runs/<run_id>/query_plan_l1.json
    ```
    Increment `L`. Stop when there are no gaps or you hit `depth`.
@@ -73,7 +73,7 @@ Work inside the run directory you were given (`runs/<run_id>/`). Let `L` = 0.
 
 ## Rules
 
-- Official docs are required for hard pricing/deprecation facts; `support`/
+- Official docs are required for hard pricing/deprecation facts. `support`/
   `appendix` (third-party) sources are context only, never the basis of a price or
   shutdown claim.
 - Never assert a price, date, or deprecation without a backing `evidence_id`.

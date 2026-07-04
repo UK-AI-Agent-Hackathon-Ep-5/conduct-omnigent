@@ -5,7 +5,7 @@
 # human-approved report. It is the sibling of Polly (code) and Scribe (docs):
 # Radar orchestrates and authors the report itself, and delegates the specialized
 # work — live research, read-only code scanning, and an independent fact-check —
-# to three sub-agents. It writes a report + artifact directory; it NEVER modifies
+# to three sub-agents. It writes a report + artifact directory and NEVER modifies
 # product code, opens PRs, or creates tickets.
 #
 # Usage:
@@ -14,7 +14,7 @@
 #
 # Setup: this runs on the Codex harness with no pinned model or provider. It
 # uses the Codex/OpenAI provider configured for this deployment. Set
-# TAVILY_API_KEY for the researcher's live web search if you want live search;
+# TAVILY_API_KEY for the researcher's live web search if you want live search.
 # without it the researcher falls back to bundled official seed URLs. Override
 # the harness or model per run with `--harness` / `--model` when needed.
 
@@ -26,7 +26,7 @@ description: >-
   cards, scans a local codebase for affected LLM API/model usage (via a
   read-only code-scanner sub-agent), computes cost impact against an internal
   usage log, drafts an evidence-grounded Markdown report, has it fact-checked by
-  an independent reviewer, and runs a human approval loop. It proposes actions;
+  an independent reviewer, and runs a human approval loop. It proposes actions.
   it never applies them.
 
 executor:
@@ -38,9 +38,10 @@ async: true
 cancellable: true
 
 # Filesystem + shell access: read the target codebase and data/, run the
-# deterministic scripts, and write artifacts under runs/<run_id>/. `sandbox:
-# none` runs unsandboxed in the caller's working directory (matches the other
-# example bundles and keeps the bundle loadable on macOS).
+# deterministic scripts, and write artifacts under runs/<run_id>/. The selected
+# repository stays as shell cwd. Bundle scripts and demo data are under
+# `$OMNIGENT_AGENT_BUNDLE_DIR`. `sandbox: none` runs unsandboxed in the caller's
+# working directory and keeps the bundle loadable on macOS.
 os_env:
   type: caller_process
   cwd: .
@@ -53,7 +54,7 @@ os_env:
 #  - approve_repo_changes is real HUMAN-IN-THE-LOOP: the runtime PAUSES the tool
 #    call and asks you to approve when Radar tries to write a file OUTSIDE runs/
 #    (i.e. touch your actual codebase) or run `git push`. Normal work — reading
-#    code, running `python3 scripts/*`, writing artifacts under runs/ — is never
+#    code, running bundle helper scripts, writing artifacts under runs/ — is never
 #    interrupted. `ask_timeout` gives you a day to answer.
 # (Only on the orchestrator: the sub-agents run headless and cannot answer an
 # ASK, so they stay read-only by prompt + blast_radius.)
@@ -107,6 +108,11 @@ prompt: |
   every artifact there. Never write outside it, and never touch the target
   codebase.
 
+  The shell cwd is the selected target repository. The Impact Radar bundle root
+  is `$OMNIGENT_AGENT_BUNDLE_DIR`. Run helper scripts as
+  `python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/<name>.py"`. Never look for
+  helper scripts inside the target repository.
+
   ## Pipeline (load the skill named at each step)
 
   1. **Research** (`api-source-research`) — dispatch the `researcher` sub-agent to
@@ -116,18 +122,20 @@ prompt: |
      straight to step 2.
   2. **Change extraction** (`api-change-extraction`) — run
      `extract_change_cards.py` on the old/new snapshots to produce
-     `change_cards.json`. The script owns the numbers; do not eyeball diffs.
+     `change_cards.json`. The script owns the numbers. Do not eyeball diffs.
   3. **Code impact** (`code-impact-scan`) — dispatch the `code-scanner` sub-agent
      to run `scan_code.py` against the target codebase and produce
      `code_impact.json`, mapped to `data/feature_map.yaml`.
   4. **Cost impact** (`cost-impact`) — run `cost_impact.py` on the usage log to
      produce `cost_impact.json`.
-  5. **Code intelligence handoff** (`code-intelligence-handoff`) ? run
+  5. **Code intelligence handoff** (`code-intelligence-handoff`) — run
      `export_handoff_records.py` to merge code, cost, feature ownership, model
      provider research, and token pricing research into `api_call_records.json`,
-     then run `summarize_handoff_stats.py` to produce `handoff_stats.json` for
-     the risk and report-generation steps.
-  6. **Risk & actions** (`risk-action-plan`) — synthesize the above into
+     then run `summarize_handoff_stats.py` and `prepare_risk_inputs.py`.
+     `api_call_records.json` is the full audit artifact. `risk_inputs.json` is
+     the bounded model-facing payload for risk planning.
+  6. **Risk & actions** (`risk-action-plan`) — synthesize `risk_inputs.json`,
+     `handoff_stats.json`, and the change/cost artifacts into
      `risk_action_plan.json` (proposals only).
   7. **Report & approval** (`report` + `evidence-citation`) — render `report.md`,
      validate citations (must pass), have the `reviewer` sub-agent fact-check it,
@@ -136,12 +144,15 @@ prompt: |
 
   ## Discipline
 
-  - Delegate research and code scanning to the sub-agents; collect their results
+  - Delegate research and code scanning to the sub-agents. Collect their results
     from your inbox with a single read rather than busy-polling — if a sub-agent
     is still running, end your turn and you will be woken when it finishes.
   - Every pricing/deprecation fact in the report needs a `[S#]` citation that
     resolves to an official source card. Numbers in prose must match the JSON
     artifacts exactly.
+  - Do not paste or summarize the full `api_call_records.json` in model context.
+    Use `risk_inputs.json` for planning and let `render_report.py` read the full
+    audit artifact deterministically.
   - Act in the same turn you announce: if you say you will run a script or
     dispatch a sub-agent, emit those tool calls in the same turn.
   - The deliverable is `runs/<run_id>/report.md` plus the artifact directory —

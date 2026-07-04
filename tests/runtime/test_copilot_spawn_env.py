@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from omnigent.runtime.workflow import _build_copilot_spawn_env
+from omnigent.runtime.workflow import AGENT_BUNDLE_DIR_ENV_VAR, _build_copilot_spawn_env
 from omnigent.spec.types import (
     AgentSpec,
     ApiKeyAuth,
@@ -107,3 +107,4 @@ def test_no_auth_prefers_stored_block_over_ambient(
 def test_bundle_dir_threaded(tmp_path: Path) -> None:
     env = _build_copilot_spawn_env(_make_spec(), workdir=tmp_path)
     assert env["HARNESS_COPILOT_BUNDLE_DIR"] == str(tmp_path)
+    assert env[AGENT_BUNDLE_DIR_ENV_VAR] == str(tmp_path)

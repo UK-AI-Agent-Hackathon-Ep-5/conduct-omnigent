@@ -26,6 +26,7 @@ import pytest
 import yaml as _yaml
 
 from omnigent.runtime.workflow import (
+    AGENT_BUNDLE_DIR_ENV_VAR,
     _build_claude_sdk_spawn_env,
     _build_codex_spawn_env,
     _build_goose_spawn_env,
@@ -952,6 +953,17 @@ def test_no_provider_legacy_profile_path_unchanged(config_home: Path) -> None:
     # The legacy path never emits a gateway base_url or auth command.
     assert "HARNESS_CODEX_GATEWAY_BASE_URL" not in env
     assert "HARNESS_CODEX_GATEWAY_AUTH_COMMAND" not in env
+
+
+def test_codex_workdir_threads_generic_bundle_dir_env(config_home: Path, tmp_path: Path) -> None:
+    """Codex gets both the harness-specific and generic bundle root env vars."""
+    _write_config(config_home, {})
+    spec = _make_spec(harness="codex")
+
+    env = _build_codex_spawn_env(spec, workdir=tmp_path)
+
+    assert env["HARNESS_CODEX_BUNDLE_DIR"] == str(tmp_path)
+    assert env[AGENT_BUNDLE_DIR_ENV_VAR] == str(tmp_path)
 
 
 def test_legacy_profile_suppresses_global_default_provider(config_home: Path) -> None:

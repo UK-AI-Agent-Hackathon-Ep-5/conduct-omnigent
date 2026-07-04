@@ -1,14 +1,16 @@
 ---
 name: risk-action-plan
-description: Turn change cards, code impact, cost impact, and advisor handoff records into a prioritized, non-executing risk and action plan. Use after analysis, before writing the report.
+description: Turn change cards, cost impact, handoff statistics, and bounded risk inputs into a prioritized, non-executing risk and action plan. Use after analysis, before writing the report.
 ---
 
 # Risk & Action Plan
 
 Synthesize the analysis into a prioritized list of risks and proposed actions.
-Use the enriched advisor handoff payload as the main bridge between code-level
-findings, external model-provider research, token-pricing research, cost impact,
-and report generation. You propose; a human approves. You never execute actions.
+Use `risk_inputs.json` as the model-facing bridge between code-level findings,
+external model-provider research, token-pricing research, cost impact, and report
+generation. `api_call_records.json` is the full audit artifact. Do not load it
+into model context for planning. You propose and a human approves. You never
+execute actions.
 
 ## Severity Model
 
@@ -23,14 +25,13 @@ and report generation. You propose; a human approves. You never execute actions.
 
 1. Join these artifacts:
    - `change_cards.json`
-   - `code_impact.json`
    - `cost_impact.json`
-   - `api_call_records.json`
    - `handoff_stats.json`
+   - `risk_inputs.json`
    - `feature_map.yaml`
-2. For each affected feature or callsite, note the provider/model change, code
-   location, owner, monthly cost delta, external research status, compatibility,
-   replacement candidates, verification gaps, and deadline.
+2. For each selected record in `risk_inputs.json`, note the provider/model
+   change, code location, owner, monthly cost delta, external research status,
+   compatibility, replacement candidates, verification gaps, and deadline.
 3. Write `runs/<run_id>/risk_action_plan.json` as a JSON list of items:
    `severity`, `title`, `rationale`, `recommended_action`, `owner`, `deadline`,
    `affected_files`, `evidence_ids`.
@@ -38,7 +39,7 @@ and report generation. You propose; a human approves. You never execute actions.
 
 ## Rules
 
-- Recommended actions are advisory text only; do not edit code, open PRs, or
+- Recommended actions are advisory text only. Do not edit code, open PRs, or
   create tickets.
 - Every action item needs evidence IDs, including change IDs, code finding IDs,
   API callsite record IDs, and source IDs when available.
@@ -46,3 +47,6 @@ and report generation. You propose; a human approves. You never execute actions.
   external research, missing cost deltas, or non-empty
   `needs_external_verification`.
 - Attach a deadline to every deprecation item from the matching change card.
+- Use `handoff_stats.json` only for aggregate counts and coverage. Use
+  `api_call_records.json` only for a narrow ID lookup if `risk_inputs.json` is
+  missing a required field.

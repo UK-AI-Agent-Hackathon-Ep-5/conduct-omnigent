@@ -36,7 +36,7 @@ prompt: |
   and `cost_impact.json` in a run directory, check:
   - Every price/date/deprecation claim has a `[S#]` that resolves to an official
     source card (run
-    `python3 examples/impact-radar/scripts/validate_citations.py --report <report>
+    `python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/validate_citations.py" --report <report>
     --sources <source_cards>` and report the result).
   - Numbers in the prose match the JSON artifacts exactly (no rounded or invented
     figures).

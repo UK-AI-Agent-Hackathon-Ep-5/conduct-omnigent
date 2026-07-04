@@ -9,9 +9,11 @@ Produce the final enterprise-readable report and get human sign-off on the
 proposed actions. The deliverable is the report plus artifact directory, not
 chat text.
 
-Treat `api_call_records.json` and `handoff_stats.json` as the advisor handoff
-payload for callsite intelligence, model-provider research, token-pricing
-research, verification gaps, and report-generation statistics.
+Treat `api_call_records.json` as a full audit artifact consumed by
+`render_report.py`, not as model context. Treat `risk_inputs.json` and
+`handoff_stats.json` as the bounded model-facing payloads for callsite
+intelligence, model-provider research, token-pricing research, verification
+gaps, and report-generation statistics.
 
 ## Procedure
 
@@ -21,12 +23,14 @@ research, verification gaps, and report-generation statistics.
    - `cost_impact.json`
    - `api_call_records.json`
    - `handoff_stats.json`
+   - `risk_inputs.json`
    - `source_cards.json` if live research was used
    - `risk_action_plan.json`
 2. Render the report scaffold. Numbers, handoff statistics, and Sources panel
    come from artifacts:
    ```
-   python3 examples/impact-radar/scripts/render_report.py --run-dir runs/<run_id>
+   python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/render_report.py" \
+     --run-dir runs/<run_id>
    ```
 3. Enrich the prose in `runs/<run_id>/report.md` if useful, keeping every number
    and citation exactly as rendered.
@@ -44,6 +48,7 @@ research, verification gaps, and report-generation statistics.
 - Code impact.
 - API callsite intelligence from `api_call_records.json`.
 - Handoff data contract from `handoff_stats.json`.
+- Bounded risk-planning inputs from `risk_inputs.json`.
 - Cost impact.
 - Risk and recommended actions.
 - Sources.
@@ -52,9 +57,11 @@ research, verification gaps, and report-generation statistics.
 ## Rules
 
 - Include model provider, token price research, owner, risk score, cost delta,
-  and verification gaps from `api_call_records.json`.
+  and verification gaps from the rendered report and `risk_inputs.json`.
+- Do not paste the full `api_call_records.json` into the model context. Let
+  `render_report.py` read it deterministically.
 - Report-first: lead with change counts, total cost delta, affected code sites,
   and enriched callsite record counts.
-- The report proposes actions; approvals are the human's. Never auto-apply an
+- The report proposes actions. Approvals are the human's. Never auto-apply an
   action, edit scanned code, open a PR, or create a ticket.
-- All run artifacts live under `runs/<run_id>/`; never write outside it.
+- All run artifacts live under `runs/<run_id>/`. Never write outside it.

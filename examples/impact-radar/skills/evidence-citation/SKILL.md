@@ -17,7 +17,7 @@ you.
    generated from it (`render_report.py` reads it).
 3. Before finalizing, run the validator (it gates the report):
    ```
-   python3 examples/impact-radar/scripts/validate_citations.py \
+   python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/validate_citations.py" \
      --report runs/<run_id>/report.md \
      --sources runs/<run_id>/source_cards.json
    ```
@@ -28,7 +28,7 @@ you.
 
 - Executive-summary facts and any price/date/deprecation claim **require** a
   `[S#]`.
-- Official docs only for hard facts; third-party sources are context, never the
+- Official docs only for hard facts. Third-party sources are context, never the
   basis of a price or shutdown claim.
 - Never invent a URL and never cite a `source_id` that is not in
   `source_cards.json`. If there is no evidence, write "no official source found"

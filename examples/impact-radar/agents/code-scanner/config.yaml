@@ -36,12 +36,12 @@ prompt: |
 
   Discipline:
   - Run the deterministic scanner rather than grepping by hand:
-    `python3 examples/impact-radar/scripts/scan_code.py --repo <path>
+    `python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/scan_code.py" --repo <path>
     --change-cards runs/<run_id>/change_cards.json --out runs/<run_id>/code_impact.json`.
     It prefers semgrep/ast-grep when installed and otherwise uses a regex
     fallback with the same output shape.
-  - Cross-reference `data/feature_map.yaml` to name the owning feature and team
-    for each affected file.
+  - Cross-reference `$OMNIGENT_AGENT_BUNDLE_DIR/data/feature_map.yaml` to name
+    the owning feature and team for each affected file.
   - NEVER edit, refactor, or "fix" the scanned code. NEVER open a PR or create a
     ticket. Findings only. Do not write outside the run directory.
   - Return `code_impact.json` and a short summary of the highest-severity sites

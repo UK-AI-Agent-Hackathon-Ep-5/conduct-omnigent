@@ -33,3 +33,15 @@ def test_packaged_impact_radar_resource_stays_in_sync() -> None:
         "Impact Radar's packaged resource must resolve to examples/impact-radar."
     )
     _assert_unpinned_codex_bundle(_PACKAGED_IMPACT_RADAR_DIR)
+
+
+def test_impact_radar_uses_bundle_dir_for_runtime_scripts() -> None:
+    instruction_files = [
+        _IMPACT_RADAR_DIR / "config.yaml",
+        *(_IMPACT_RADAR_DIR / "skills").glob("*/SKILL.md"),
+        *(_IMPACT_RADAR_DIR / "agents").glob("*/config.yaml"),
+    ]
+    joined = "\n".join(path.read_text(encoding="utf-8") for path in instruction_files)
+
+    assert "OMNIGENT_AGENT_BUNDLE_DIR" in joined
+    assert "examples/impact-radar/scripts" not in joined

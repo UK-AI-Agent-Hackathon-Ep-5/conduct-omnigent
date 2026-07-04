@@ -672,6 +672,9 @@ class OSEnvSpec:
         project files via absolute paths. Requires an active
         sandbox (rejected for ``type='none'``). Mutually exclusive
         with :attr:`fork`. Default ``False``.
+    :param env: Runtime-only environment variables merged into the
+        helper subprocess. Native YAML parsing does not expose this
+        field.
     """
 
     type: str = "caller_process"
@@ -679,6 +682,7 @@ class OSEnvSpec:
     sandbox: OSEnvSandboxSpec | None = None
     fork: bool = False
     start_in_scratch: bool = False
+    env: dict[str, str] | None = None
 
 
 @dataclass

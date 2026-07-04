@@ -87,6 +87,7 @@ from omnigent.stores import ConversationStore
 # ── Module-level constants ────────────────────────────────────
 
 _logger = logging.getLogger(__name__)
+AGENT_BUNDLE_DIR_ENV_VAR = "OMNIGENT_AGENT_BUNDLE_DIR"
 
 # Task kind for background `@tool(synchronous=False)` work items —
 # the unit the parent loop separates from the polling-based
@@ -1145,6 +1146,7 @@ def _add_claude_sdk_skills_env(
     if spec.name:
         env["HARNESS_CLAUDE_SDK_AGENT_NAME"] = spec.name
     if workdir is not None:
+        env[AGENT_BUNDLE_DIR_ENV_VAR] = str(workdir)
         env["HARNESS_CLAUDE_SDK_BUNDLE_DIR"] = str(workdir)
 
 
@@ -1312,6 +1314,7 @@ def _build_codex_spawn_env(
     if spec.name:
         env["HARNESS_CODEX_AGENT_NAME"] = spec.name
     if workdir is not None:
+        env[AGENT_BUNDLE_DIR_ENV_VAR] = str(workdir)
         env["HARNESS_CODEX_BUNDLE_DIR"] = str(workdir)
     os_env_payload = _serialize_os_env(spec.os_env)
     if os_env_payload is not None:
@@ -1372,6 +1375,7 @@ def _build_pi_spawn_env(
     if cwd is not None:
         env["HARNESS_PI_CWD"] = str(cwd)
     if workdir is not None:
+        env[AGENT_BUNDLE_DIR_ENV_VAR] = str(workdir)
         env["HARNESS_PI_BUNDLE_DIR"] = str(workdir)
     os_env_payload = _serialize_os_env(spec.os_env)
     if os_env_payload is not None:
@@ -1691,6 +1695,7 @@ def _build_cursor_spawn_env(
     if spec.name:
         env["HARNESS_CURSOR_AGENT_NAME"] = spec.name
     if workdir is not None:
+        env[AGENT_BUNDLE_DIR_ENV_VAR] = str(workdir)
         env["HARNESS_CURSOR_BUNDLE_DIR"] = str(workdir)
     os_env_payload = _serialize_os_env(spec.os_env)
     if os_env_payload is not None:
@@ -1900,6 +1905,7 @@ def _build_copilot_spawn_env(
     if spec.name:
         env["HARNESS_COPILOT_AGENT_NAME"] = spec.name
     if workdir is not None:
+        env[AGENT_BUNDLE_DIR_ENV_VAR] = str(workdir)
         env["HARNESS_COPILOT_BUNDLE_DIR"] = str(workdir)
     os_env_payload = _serialize_os_env(spec.os_env)
     if os_env_payload is not None:

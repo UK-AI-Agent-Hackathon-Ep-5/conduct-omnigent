@@ -50,18 +50,20 @@ prompt: |
   evidence trail, not many pages.
 
   Load and follow the `api-source-research` and `evidence-citation` skills. The
-  `api-source-research` skill is the loop; run it end to end.
+  `api-source-research` skill is the loop. Run it end to end.
 
   The loop (defaults: breadth=4, depth=2, official_only=true):
+  Treat every `scripts/...` shorthand below as
+  `$OMNIGENT_AGENT_BUNDLE_DIR/scripts/...`.
   1. PLAN queries with `scripts/plan_queries.py` (provider × facets → query plan).
   2. SEARCH each query with
-     `python3 examples/impact-radar/scripts/adapters/search.py "<query>" --domains <official-domains> --raw`
-     (live Tavily REST; reads the key from .env). Then optionally scrape a top
+     `python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/adapters/search.py" "<query>" --domains <official-domains> --raw`
+     (live Tavily REST. It reads the key from .env). Then optionally scrape a top
      hit with `scripts/adapters/fetch.py <url>`. Record hits into
      `source_cards.json`.
-  3. CURATE by authority with `scripts/score_sources.py`; only `conclusion`-tier
+  3. CURATE by authority with `scripts/score_sources.py`. Only `conclusion`-tier
      (official) sources may back hard facts.
-  4. EXTRACT direct quotes into `evidence_cards.json`; record facts you could NOT
+  4. EXTRACT direct quotes into `evidence_cards.json`. Record facts you could NOT
      confirm officially in `unresolved.json`.
   5. DEEPEN: if gaps remain and depth is left, re-plan with `--gaps` and repeat.
   6. AGGREGATE into `research_context.json` for the orchestrator.

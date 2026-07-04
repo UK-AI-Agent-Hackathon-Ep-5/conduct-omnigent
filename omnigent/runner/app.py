@@ -14639,6 +14639,9 @@ def create_runner_app(
                                             if _is_spec_local
                                             else runner_workspace
                                         )
+                                        _agent_bundle_dir = _resolved_spec_workdir(
+                                            _spec_for_dispatch_entry
+                                        )
                                         _spec_for_dispatch = _unwrap_resolved_spec(
                                             _spec_for_dispatch_entry
                                         )
@@ -14667,6 +14670,7 @@ def create_runner_app(
                                                     terminal_registry=terminal_registry,
                                                     resource_registry=resource_registry,
                                                     agent_spec=_spec_for_dispatch,
+                                                    agent_bundle_dir=_agent_bundle_dir,
                                                     conversation_id=conv_id,
                                                     task_id=_omnigent_task_id or _response_id,
                                                     agent_id=_agent_id_for_dispatch,
