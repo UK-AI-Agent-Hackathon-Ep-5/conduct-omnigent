@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReportChatProvider, type ReportChatRequest } from "./ReportChatContext";
 import { ReportOutputView } from "./ReportOutputView";
 import type { ReportOutput } from "./reportOutput";
@@ -146,6 +146,11 @@ describe("ReportOutputView", () => {
     installLocalStorageMock();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("renders a horizontal section preview strip without inline detail", () => {
     render(<ReportOutputView report={REPORT} enablePixi={false} />);
 
@@ -258,7 +263,23 @@ describe("ReportOutputView", () => {
     expect(screen.queryByTestId("report-section-dialog")).toBeNull();
   });
 
-  it("opens the PPTX export modal and applies dragged section order", () => {
+  it("opens the PPTX export modal and downloads the selected section order", async () => {
+    const clickedDownloads: string[] = [];
+    const origCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const element = origCreateElement(tag);
+      if (tag === "a") {
+        vi.spyOn(element as HTMLAnchorElement, "click").mockImplementation(() => {
+          clickedDownloads.push((element as HTMLAnchorElement).download);
+        });
+      }
+      return element;
+    });
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:report-pptx"),
+      revokeObjectURL: vi.fn(),
+    });
+
     render(<ReportOutputView report={REPORT} enablePixi={false} />);
 
     const exportButton = screen.getByRole("button", { name: "Export PPTX" });
@@ -289,11 +310,20 @@ describe("ReportOutputView", () => {
     rows = within(dialog).getAllByTestId("report-export-section-row");
     expect(within(rows[0]!).getByText("Hardcoded DeepSeek Chat Model")).toBeDefined();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Apply choices" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Download PPTX" }));
 
+    await waitFor(() => {
+      expect(clickedDownloads).toEqual(["llm-impact-radar-report-2026-07-02.pptx"]);
+    });
     const strip = screen.getByTestId("report-section-strip");
     const previewButtons = within(strip).getAllByRole("button");
     expect(within(previewButtons[0]!).getByText("Hardcoded DeepSeek Chat Model")).toBeDefined();
+    expect(URL.createObjectURL).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      }),
+    );
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:report-pptx");
 
     fireEvent.click(exportButton);
     const reopenedDialog = screen.getByTestId("report-export-dialog");

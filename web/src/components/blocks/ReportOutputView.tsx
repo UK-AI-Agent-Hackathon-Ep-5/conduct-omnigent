@@ -44,6 +44,7 @@ import {
   useReportChat,
   type ReportChatHandler,
 } from "./ReportChatContext";
+import { triggerReportPptxDownload } from "./reportPptxExport";
 import type { ReportOutput, ReportPricing, ReportSection, ReportSeverity } from "./reportOutput";
 
 const SEVERITY_ORDER: ReportSeverity[] = ["critical", "high", "medium", "low", "info"];
@@ -148,6 +149,8 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
   const [activeId, setActiveId] = useState(report.sections[0]?.id ?? "");
   const [detailOpen, setDetailOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportPending, setExportPending] = useState(false);
   const [chatHistories, setChatHistories] = useState<Record<string, ReportDialogMessage[]>>({});
   const reportEditStorageKey = useMemo(() => reportSectionEditStorageKey(report), [report]);
   const reportOrderStorageKey = useMemo(() => reportSectionOrderStorageKey(report), [report]);
@@ -310,6 +313,8 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
     setDraftSelectedExportSectionIds(
       mergeSectionSelection(selectedExportSectionIds, report.sections),
     );
+    setExportError(null);
+    setExportPending(false);
     setExportDialogOpen(true);
   }
 
@@ -346,6 +351,28 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
     writeReportSectionOrder(reportOrderStorageKey, nextOrder);
     writeReportSectionSelection(reportSelectionStorageKey, nextSelection);
     setExportDialogOpen(false);
+  }
+
+  async function exportDraftPresentation() {
+    const nextOrder = mergeSectionOrder(draftSectionOrder, report.sections);
+    const nextSelection = mergeSectionSelection(draftSelectedExportSectionIds, report.sections);
+    const sectionsToExport = orderReportSections(editedSections, nextOrder).filter((section) =>
+      nextSelection.includes(section.id),
+    );
+    setExportPending(true);
+    try {
+      await triggerReportPptxDownload({ ...report, title: reportTitle }, sectionsToExport);
+      setSectionOrder(nextOrder);
+      setSelectedExportSectionIds(nextSelection);
+      writeReportSectionOrder(reportOrderStorageKey, nextOrder);
+      writeReportSectionSelection(reportSelectionStorageKey, nextSelection);
+      setExportError(null);
+      setExportDialogOpen(false);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "The PPTX export failed.");
+    } finally {
+      setExportPending(false);
+    }
   }
 
   function nextChatMessageId(sectionId: string): string {
@@ -520,11 +547,14 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
         reportTitle={reportTitle}
         sections={exportDraftSections}
         selectedSectionIds={draftSelectedExportSectionIds}
+        error={exportError}
+        isExporting={exportPending}
         onReorder={reorderDraftSections}
         onMove={moveDraftSection}
         onToggleSection={toggleDraftExportSection}
         onReset={resetDraftSectionOrder}
         onApply={applyDraftSectionOrder}
+        onExport={exportDraftPresentation}
       />
     </section>
   );
@@ -1015,27 +1045,34 @@ function ReportExportDialog({
   reportTitle,
   sections,
   selectedSectionIds,
+  error,
+  isExporting,
   onReorder,
   onMove,
   onToggleSection,
   onReset,
   onApply,
+  onExport,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   reportTitle: string;
   sections: ReportSection[];
   selectedSectionIds: string[];
+  error: string | null;
+  isExporting: boolean;
   onReorder: (sourceId: string, targetId: string) => void;
   onMove: (sectionId: string, direction: -1 | 1) => void;
   onToggleSection: (sectionId: string) => void;
   onReset: () => void;
   onApply: () => void;
+  onExport: () => void | Promise<void>;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const selectedSectionSet = useMemo(() => new Set(selectedSectionIds), [selectedSectionIds]);
   const selectedCount = sections.filter((section) => selectedSectionSet.has(section.id)).length;
   const canApply = selectedCount > 0;
+  const controlsDisabled = !canApply || isExporting;
 
   function handleDragStart(event: DragEvent<HTMLLIElement>, sectionId: string) {
     setDraggingId(sectionId);
@@ -1169,6 +1206,14 @@ function ReportExportDialog({
               );
             })}
           </ol>
+          {error && (
+            <div
+              className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-destructive text-sm"
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-border/70 border-t bg-background/85 p-3">
@@ -1186,8 +1231,11 @@ function ReportExportDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="button" disabled={!canApply} onClick={onApply}>
-              Apply choices
+            <Button type="button" variant="outline" disabled={controlsDisabled} onClick={onApply}>
+              Save choices
+            </Button>
+            <Button type="button" disabled={controlsDisabled} onClick={onExport}>
+              {isExporting ? "Preparing PPTX" : "Download PPTX"}
             </Button>
           </div>
         </div>
