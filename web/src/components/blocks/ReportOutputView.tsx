@@ -115,8 +115,8 @@ const REPORT_SHELL_STYLE = {
 } satisfies CSSProperties;
 
 const REPORT_PREVIEW_CARD_STYLE = {
-  gridTemplateRows: "2.75rem 2.5rem 3rem 1.625rem 3rem",
-  height: "17rem",
+  gridTemplateRows: "1.75rem 2.5rem 3rem 0.375rem 3rem",
+  height: "14.75rem",
 } satisfies CSSProperties;
 
 const REPORT_BRAND_PATTERN = /\bConduct\s+Omnigent\b/gi;
@@ -1306,24 +1306,14 @@ function ReportSectionPreview({
       style={REPORT_PREVIEW_CARD_STYLE}
     >
       <div aria-hidden className={cn("absolute inset-y-4 left-0 w-1 rounded-r-full", style.bar)} />
-      <div
-        className="grid min-w-0 grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] items-start gap-3 pl-1"
-        data-testid="report-preview-meta"
-      >
-        <div className="min-w-0">
-          <span className="block font-medium text-[0.65rem] text-muted-foreground uppercase tracking-normal">
-            Impact level
-          </span>
-          <SeverityBadge severity={section.severity} />
-        </div>
-        <div className="min-w-0">
-          <span className="block font-medium text-[0.65rem] text-muted-foreground uppercase tracking-normal">
-            Categories
-          </span>
-          <span className="mt-1 block truncate rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-muted-foreground text-xs">
-            {sectionTypeLabel(section.type)}
-          </span>
-        </div>
+      <div className="flex min-w-0 items-start gap-2 pl-1" data-testid="report-preview-meta">
+        <SeverityBadge severity={section.severity} />
+        <span
+          className="min-w-0 truncate rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-muted-foreground text-xs"
+          data-testid="report-preview-type"
+        >
+          {sectionTypeLabel(section.type)}
+        </span>
       </div>
       <h5
         className="line-clamp-2 pl-1 font-semibold text-sm leading-5 tracking-normal"
@@ -1337,10 +1327,7 @@ function ReportSectionPreview({
       >
         {cleanReportText(section.content)}
       </p>
-      <div className="min-w-0 pl-1" data-testid="report-preview-level-plot">
-        <span className="mb-1 block font-medium text-[0.65rem] text-muted-foreground uppercase tracking-normal">
-          Level plot
-        </span>
+      <div className="min-w-0 self-center pl-1" data-testid="report-preview-level-plot">
         <SeverityMeter severity={section.severity} />
       </div>
       <PreviewFooter section={section} />

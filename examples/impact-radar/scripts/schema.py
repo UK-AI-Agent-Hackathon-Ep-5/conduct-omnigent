@@ -75,7 +75,7 @@ class CodeFinding:
     provider: str | None = None
     model: str | None = None
     matched_change_ids: list[str] = field(default_factory=list)
-    severity: str = "info"  # info | low | medium | high
+    severity: str = "info"  # info | low | medium | high | critical
 
 
 # Known provider signatures for the regex fallback scanner. Kept small and
@@ -83,6 +83,7 @@ class CodeFinding:
 PROVIDER_IMPORT_SIGNATURES: dict[str, list[str]] = {
     "openai": [r"\bimport openai\b", r"\bfrom openai\b"],
     "anthropic": [r"\bimport anthropic\b", r"\bfrom anthropic\b"],
+    "deepseek": [r"\bimport deepseek\b", r"\bfrom deepseek\b"],
     "gemini": [r"google\.generativeai", r"\bfrom google\b.*generativeai"],
     "mistral": [r"\bimport mistralai\b", r"\bfrom mistralai\b"],
 }

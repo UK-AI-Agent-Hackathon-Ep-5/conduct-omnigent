@@ -17,11 +17,13 @@ import argparse
 import os
 import re
 import shutil
+from datetime import date
 from pathlib import Path
 
 from schema import PROVIDER_IMPORT_SIGNATURES, ChangeCard, CodeFinding, load_json, write_json
 
 _CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".go", ".rb"}
+_CRITICAL_SHUTDOWN_WINDOW_DAYS = 30
 _DEFAULT_EXCLUDED_DIRS = {
     ".cache",
     ".codex-tmp",
@@ -55,6 +57,7 @@ _DEFAULT_MAX_SNIPPET_CHARS = 400
 _MODEL_PATTERNS = {
     "openai": re.compile(r"\b(gpt-[0-9][\w.\-]*|o[0-9][\w.\-]*|text-embedding-[\w.\-]+)\b"),
     "anthropic": re.compile(r"\b(claude-[\w.\-]+)\b"),
+    "deepseek": re.compile(r"\b(deepseek-[\w.\-]+)\b"),
     "gemini": re.compile(r"\b(gemini-[\w.\-]+)\b"),
     "mistral": re.compile(r"\b(mistral-[\w.\-]+|open-mistral-[\w.\-]+)\b"),
 }
@@ -163,7 +166,7 @@ def _iter_code_files(
         root_path = Path(root)
         kept_dirs: list[str] = []
         for dirname in sorted(dirnames):
-            rel_dir = str((root_path / dirname).relative_to(repo))
+            rel_dir = (root_path / dirname).relative_to(repo).as_posix()
             if _is_excluded_path(
                 rel_dir,
                 excluded_dirs=excluded_dirs,
@@ -177,7 +180,7 @@ def _iter_code_files(
             path = root_path / filename
             if path.suffix not in _CODE_SUFFIXES:
                 continue
-            rel = str(path.relative_to(repo))
+            rel = path.relative_to(repo).as_posix()
             if _is_excluded_path(
                 rel,
                 excluded_dirs=excluded_dirs,
@@ -187,7 +190,29 @@ def _iter_code_files(
             yield path, rel
 
 
-def _severity_for(cards: list[ChangeCard]) -> str:
+def _parse_shutdown_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    match = re.search(r"\d{4}-\d{2}-\d{2}", value)
+    if not match:
+        return None
+    try:
+        return date.fromisoformat(match.group(0))
+    except ValueError:
+        return None
+
+
+def _is_near_shutdown(card: ChangeCard, today: date) -> bool:
+    shutdown = _parse_shutdown_date(card.shutdown_date)
+    if shutdown is None:
+        return False
+    return (shutdown - today).days <= _CRITICAL_SHUTDOWN_WINDOW_DAYS
+
+
+def _severity_for(cards: list[ChangeCard], *, today: date | None = None) -> str:
+    today = today or date.today()
+    if any(c.change_type == "deprecation" and _is_near_shutdown(c, today) for c in cards):
+        return "critical"
     if any(c.change_type == "deprecation" for c in cards):
         return "high"
     if any(c.change_type == "price_increase" for c in cards):
@@ -201,6 +226,7 @@ def _scan_regex(
     repo: Path,
     cards_by_model: dict[str, list[ChangeCard]],
     *,
+    today: date | None,
     excluded_dirs: set[str],
     excluded_path_prefixes: set[str],
     max_file_bytes: int,
@@ -266,7 +292,7 @@ def _scan_regex(
                         provider=provider,
                         model=model,
                         matched_change_ids=[c.change_id for c in matched],
-                        severity=_severity_for(matched),
+                        severity=_severity_for(matched, today=today),
                         match_start=m.start(1),
                         match_end=m.end(1),
                         max_snippet_chars=max_snippet_chars,
@@ -301,6 +327,7 @@ def scan(
     excluded_path_prefixes: set[str] | None = None,
     max_file_bytes: int = _DEFAULT_MAX_FILE_BYTES,
     max_snippet_chars: int = _DEFAULT_MAX_SNIPPET_CHARS,
+    today: date | None = None,
 ) -> list[CodeFinding]:
     cards_by_model: dict[str, list[ChangeCard]] = {}
     for c in cards:
@@ -315,6 +342,7 @@ def scan(
     return _scan_regex(
         repo,
         cards_by_model,
+        today=today,
         excluded_dirs=excluded_dirs or set(_DEFAULT_EXCLUDED_DIRS),
         excluded_path_prefixes=excluded_path_prefixes or set(_DEFAULT_EXCLUDED_PATHS),
         max_file_bytes=max_file_bytes,

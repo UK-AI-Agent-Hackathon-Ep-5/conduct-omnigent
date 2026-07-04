@@ -178,15 +178,18 @@ describe("ReportOutputView", () => {
 
     const previews = within(strip).getAllByTestId("report-section-preview");
     expect((previews[0] as HTMLElement).style.gridTemplateRows).toBe(
-      "2.75rem 2.5rem 3rem 1.625rem 3rem",
+      "1.75rem 2.5rem 3rem 0.375rem 3rem",
     );
-    expect((previews[0] as HTMLElement).style.height).toBe("17rem");
+    expect((previews[0] as HTMLElement).style.height).toBe("14.75rem");
     expect(previews[0]!.className).not.toContain("translate-y");
     expect(previews[0]!.className).not.toContain("transform");
     for (const preview of previews) {
       const meta = within(preview).getByTestId("report-preview-meta");
-      expect(within(meta).getByText("Impact level")).toBeDefined();
-      expect(within(meta).getByText("Categories")).toBeDefined();
+      expect(meta).toBeDefined();
+      expect(within(meta).getByTestId("report-preview-type")).toBeDefined();
+      expect(within(preview).queryByText("Impact level")).toBeNull();
+      expect(within(preview).queryByText("Categories")).toBeNull();
+      expect(within(preview).queryByText("Level plot")).toBeNull();
       expect(within(preview).getByTestId("report-preview-title").className).toContain(
         "line-clamp-2",
       );

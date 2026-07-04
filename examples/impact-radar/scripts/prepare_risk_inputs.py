@@ -14,7 +14,7 @@ from typing import Any
 
 from schema import load_json, write_json
 
-RISK_WEIGHT = {"high": 4, "medium": 3, "low": 2, "info": 1}
+RISK_WEIGHT = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
 HIGH_VALUE_NEEDS = {
     "resolve_runtime_model_name",
     "verify_provider_from_client_context",
@@ -57,7 +57,7 @@ def _cost_delta(record: dict[str, Any]) -> float:
 
 def _has_signal(record: dict[str, Any]) -> bool:
     risk = str(record.get("migration_risk") or "").lower()
-    if risk in {"high", "medium"}:
+    if risk in {"critical", "high", "medium"}:
         return True
     if record.get("matched_change_ids"):
         return True
@@ -186,9 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     handoff_stats = (
-        load_json(args.handoff_stats)
-        if args.handoff_stats and args.handoff_stats.exists()
-        else {}
+        load_json(args.handoff_stats) if args.handoff_stats and args.handoff_stats.exists() else {}
     )
     payload = build_risk_inputs(
         load_json(args.api_call_records),

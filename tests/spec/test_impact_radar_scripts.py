@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
+from datetime import date
 from pathlib import Path
 from types import ModuleType
 
@@ -59,6 +61,48 @@ def test_scan_code_skips_generated_paths_and_caps_snippets(tmp_path: Path) -> No
     assert "gpt-4o" in findings[0].snippet
 
 
+def test_scan_code_marks_near_shutdown_deprecations_as_critical(tmp_path: Path) -> None:
+    scan_code = _load_script("scan_code")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "workflow.py").write_text(
+        'MODEL = "deepseek-chat"\nNEXT_MODEL = "gpt-3.5-turbo"\n',
+        encoding="utf-8",
+    )
+
+    near_shutdown = scan_code.ChangeCard(
+        change_id="deepseek-C1",
+        provider="deepseek",
+        change_type="deprecation",
+        target="deepseek-chat",
+        target_type="model",
+        metric="status",
+        old_value="active",
+        new_value="deprecated",
+        shutdown_date="2026-07-24 15:59 UTC",
+    )
+    later_shutdown = scan_code.ChangeCard(
+        change_id="openai-C1",
+        provider="openai",
+        change_type="deprecation",
+        target="gpt-3.5-turbo",
+        target_type="model",
+        metric="status",
+        old_value="active",
+        new_value="deprecated",
+        shutdown_date="2026-10-23",
+    )
+
+    findings = scan_code.scan(repo, [near_shutdown, later_shutdown], today=date(2026, 7, 4))
+    by_model = {finding.model: finding for finding in findings}
+
+    assert by_model["deepseek-chat"].severity == "critical"
+    assert by_model["deepseek-chat"].provider == "deepseek"
+    assert by_model["gpt-3.5-turbo"].severity == "high"
+    assert scan_code._severity_for([near_shutdown], today=date(2026, 7, 4)) == "critical"
+    assert scan_code._severity_for([later_shutdown], today=date(2026, 7, 4)) == "high"
+
+
 def test_prepare_risk_inputs_keeps_only_bounded_high_signal_records() -> None:
     prepare_risk_inputs = _load_script("prepare_risk_inputs")
     records = [
@@ -77,7 +121,10 @@ def test_prepare_risk_inputs_keeps_only_bounded_high_signal_records() -> None:
             "risk_score": 0.7,
             "matched_change_ids": ["openai-C1"],
             "estimated_cost_delta_usd": 120,
-            "external_research": {"model_status": "active", "source_urls": ["https://example.com"]},
+            "external_research": {
+                "model_status": "active",
+                "source_urls": ["https://example.com"],
+            },
             "needs_external_verification": [],
             "confidence": "medium",
             "evidence": {"snippet": "gpt-4o " + ("x" * 500)},
@@ -97,10 +144,36 @@ def test_prepare_risk_inputs_keeps_only_bounded_high_signal_records() -> None:
             "risk_score": 0.9,
             "matched_change_ids": ["gemini-C1"],
             "estimated_cost_delta_usd": 0,
-            "external_research": {"model_status": "deprecated", "source_urls": ["https://example.com"]},
+            "external_research": {
+                "model_status": "deprecated",
+                "source_urls": ["https://example.com"],
+            },
             "needs_external_verification": [],
             "confidence": "medium",
             "evidence": {"snippet": "gemini-1.5-pro"},
+        },
+        {
+            "id": "F4",
+            "provider": "deepseek",
+            "model_name": "deepseek-chat",
+            "calling_method": "deepseek::model_literal",
+            "category": "model_literal",
+            "code_location": "app/invoice.py:4",
+            "file_path": "app/invoice.py",
+            "line": 4,
+            "feature": {"name": "invoice", "owner": "finance-team", "tier": "production"},
+            "call_likelihood": "high",
+            "migration_risk": "critical",
+            "risk_score": 0.98,
+            "matched_change_ids": ["deepseek-C1"],
+            "estimated_cost_delta_usd": 0,
+            "external_research": {
+                "model_status": "deprecated",
+                "source_urls": ["https://example.com"],
+            },
+            "needs_external_verification": [],
+            "confidence": "medium",
+            "evidence": {"snippet": "deepseek-chat"},
         },
         {
             "id": "F3",
@@ -125,11 +198,11 @@ def test_prepare_risk_inputs_keeps_only_bounded_high_signal_records() -> None:
     ]
     handoff_stats = {
         "output_summary": {
-            "record_count": 3,
+            "record_count": 4,
             "records_with_cost": 1,
-            "records_with_external_research": 2,
+            "records_with_external_research": 3,
             "records_needing_external_verification": 1,
-            "risk_levels": {"high": 1, "medium": 1, "info": 1},
+            "risk_levels": {"critical": 1, "high": 1, "medium": 1, "info": 1},
         }
     }
 
@@ -140,12 +213,153 @@ def test_prepare_risk_inputs_keeps_only_bounded_high_signal_records() -> None:
         max_snippet_chars=60,
     )
 
-    assert payload["source_record_count"] == 3
-    assert payload["candidate_record_count"] == 2
+    assert payload["source_record_count"] == 4
+    assert payload["candidate_record_count"] == 3
     assert payload["selected_record_count"] == 1
-    assert payload["omitted_candidate_count"] == 1
-    assert payload["records"][0]["id"] == "F2"
+    assert payload["omitted_candidate_count"] == 2
+    assert payload["records"][0]["id"] == "F4"
     snippet = payload["records"][0]["evidence"]["snippet"]
     assert snippet is not None
     assert len(snippet) <= 60
-    assert payload["stats_digest"]["risk_levels"] == {"high": 1, "medium": 1, "info": 1}
+    assert payload["stats_digest"]["risk_levels"] == {
+        "critical": 1,
+        "high": 1,
+        "medium": 1,
+        "info": 1,
+    }
+
+
+def test_render_report_writes_ui_renderable_report_output(tmp_path: Path) -> None:
+    render_report = _load_script("render_report")
+    run_dir = tmp_path / "runs" / "example"
+    run_dir.mkdir(parents=True)
+
+    artifacts = {
+        "change_cards.json": [
+            {
+                "change_id": "deepseek-C1",
+                "provider": "deepseek",
+                "change_type": "deprecation",
+                "target": "deepseek-chat",
+                "target_type": "model",
+                "metric": "status",
+                "old_value": "active",
+                "new_value": "deprecated",
+                "shutdown_date": "2026-07-24 15:59 UTC",
+                "replacement": "deepseek-v4-flash",
+            }
+        ],
+        "code_impact.json": [
+            {
+                "finding_id": "F1",
+                "file": "app/invoice.py",
+                "line": 4,
+                "snippet": 'MODEL = "deepseek-chat"',
+                "category": "model_literal",
+                "provider": "deepseek",
+                "model": "deepseek-chat",
+                "matched_change_ids": ["deepseek-C1"],
+                "severity": "critical",
+            }
+        ],
+        "cost_impact.json": {
+            "totals": {
+                "old_cost_usd": 100.0,
+                "new_cost_usd": 60.0,
+                "delta_usd": -40.0,
+                "pct_change": -40.0,
+            },
+            "by_feature": {
+                "invoice": {
+                    "old_cost_usd": 100.0,
+                    "new_cost_usd": 60.0,
+                    "delta_usd": -40.0,
+                }
+            },
+        },
+        "api_call_records.json": {
+            "repo": "/work/repo",
+            "records": [
+                {
+                    "id": "F1",
+                    "provider": "deepseek",
+                    "model_name": "deepseek-chat",
+                    "code_location": "app/invoice.py:4",
+                    "migration_risk": "critical",
+                    "call_likelihood": "high",
+                    "estimated_cost_delta_usd": -40.0,
+                    "feature": {"name": "invoice", "owner": "finance-team"},
+                    "matched_change_ids": ["deepseek-C1"],
+                }
+            ],
+        },
+        "handoff_stats.json": {"output_summary": {"record_count": 1}},
+        "risk_inputs.json": {
+            "source_record_count": 1,
+            "selected_record_count": 1,
+            "records": [
+                {
+                    "id": "F1",
+                    "provider": "deepseek",
+                    "model_name": "deepseek-chat",
+                    "code_location": "app/invoice.py:4",
+                    "migration_risk": "critical",
+                    "feature": {"owner": "finance-team"},
+                    "needs_external_verification": [],
+                }
+            ],
+        },
+        "risk_action_plan.json": [
+            {
+                "action_id": "ACT-001",
+                "severity": "critical",
+                "title": "Migrate invoice extraction",
+                "recommended_action": "Replace deepseek-chat with deepseek-v4-flash.",
+                "evidence_ids": ["deepseek-C1", "F1"],
+            }
+        ],
+        "source_cards.json": [
+            {
+                "source_id": "S1",
+                "title": "DeepSeek updates",
+                "url": "https://example.com/deepseek",
+                "source_type": "provider_docs",
+                "authority_tier": "official",
+            }
+        ],
+    }
+    for name, payload in artifacts.items():
+        (run_dir / name).write_text(json.dumps(payload), encoding="utf-8")
+
+    assert render_report.main(["--run-dir", str(run_dir), "--run-id", "runs/example"]) == 0
+
+    report_output = json.loads((run_dir / "report_output.json").read_text(encoding="utf-8"))
+    required_report_keys = {
+        "report_version",
+        "run_id",
+        "generated_at",
+        "title",
+        "providers",
+        "sections",
+    }
+    assert required_report_keys <= set(report_output)
+    assert report_output["run_id"] == "runs/example"
+    assert report_output["providers"] == ["deepseek"]
+    assert report_output["target"] == {"name": "repo", "path": "/work/repo"}
+    assert report_output["sections"]
+
+    required_section_keys = {"id", "type", "title", "content", "severity", "data"}
+    for section in report_output["sections"]:
+        assert required_section_keys <= set(section)
+        assert section["severity"] in {"critical", "high", "medium", "low", "info"}
+        assert isinstance(section["data"], dict)
+
+    assert any(
+        section["type"] == "code_impact" and section["severity"] == "critical"
+        for section in report_output["sections"]
+    )
+    block = (run_dir / "report_output.block.txt").read_text(encoding="utf-8")
+    assert block.startswith("REPORT_OUTPUT\n{")
+    assert block.endswith("END_REPORT_OUTPUT\n")
+    payload = block.removeprefix("REPORT_OUTPUT\n").removesuffix("END_REPORT_OUTPUT\n")
+    assert json.loads(payload)["run_id"] == "runs/example"

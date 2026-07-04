@@ -133,7 +133,7 @@ def parse(root: Path, *, expand_env: bool = True) -> AgentSpec:
     if not config_path.exists():
         raise FileNotFoundError(f"config.yaml not found in {root}")
 
-    raw = yaml.load(config_path.read_text(), Loader=_ConfigYamlLoader)
+    raw = yaml.load(config_path.read_text(encoding="utf-8"), Loader=_ConfigYamlLoader)
     if not isinstance(raw, dict):
         raise OmnigentError(
             f"config.yaml must be a YAML mapping, got {type(raw).__name__}",

@@ -97,8 +97,9 @@ omnigent run examples/impact-radar \
   -p "Analyze OpenAI + Gemini pricing and deprecation changes and their impact on ./examples/impact-radar/data/demo_codebase"
 ```
 
-The result is `examples/impact-radar/runs/<run_id>/report.md` plus the JSON
-artifacts and `approval_log.md`.
+The result is `examples/impact-radar/runs/<run_id>/report.md`,
+`report_output.json`, `report_output.block.txt`, the JSON artifacts, and
+`approval_log.md`.
 
 ## Try the deterministic core with no LLM and no keys
 
@@ -116,6 +117,10 @@ python3 scripts/summarize_handoff_stats.py --api-call-records $RUN/api_call_reco
 python3 scripts/prepare_risk_inputs.py --api-call-records $RUN/api_call_records.json --handoff-stats $RUN/handoff_stats.json --out $RUN/risk_inputs.json
 python3 scripts/render_report.py --run-dir $RUN
 ```
+
+Use `report_output.block.txt` when you want the web chat to render the report
+preview. It contains the required `REPORT_OUTPUT` and `END_REPORT_OUTPUT`
+markers with valid JSON between them.
 
 With the bundled demo data this reports a `gpt-3.5-turbo` (used in
 `app/summarizer/legacy.py`) and `gemini-1.5-pro` (used in `app/docs/analyze.py`)

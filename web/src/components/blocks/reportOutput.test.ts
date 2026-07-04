@@ -83,6 +83,42 @@ describe("report output parsing", () => {
     expect(report?.title).toBe("LLM Impact Radar Report - Example Project");
   });
 
+  it("accepts an inline marker before the json payload", () => {
+    const report = parseReportOutput(
+      `${REPORT_OUTPUT_MARKER} ${JSON.stringify(validReport)} ${REPORT_OUTPUT_END_MARKER}`,
+    );
+
+    expect(report?.run_id).toBe("example-2026-07-02T0900Z");
+  });
+
+  it("accepts an inline report block after leading prose", () => {
+    const report = parseReportOutput(
+      `Here is the report: ${REPORT_OUTPUT_MARKER} ${JSON.stringify(validReport)} ${REPORT_OUTPUT_END_MARKER}`,
+    );
+
+    expect(report?.title).toBe("LLM Impact Radar Report - Example Project");
+  });
+
+  it("accepts an inline report block after punctuation without spacing", () => {
+    const report = parseReportOutput(
+      `chatter.${REPORT_OUTPUT_MARKER} ${JSON.stringify(validReport)} ${REPORT_OUTPUT_END_MARKER}`,
+    );
+
+    expect(report?.title).toBe("LLM Impact Radar Report - Example Project");
+  });
+
+  it("accepts an inline report block after any text without spacing", () => {
+    const report = parseReportOutput(
+      `chatter${REPORT_OUTPUT_MARKER} ${JSON.stringify(validReport)} ${REPORT_OUTPUT_END_MARKER}`,
+    );
+
+    expect(report?.title).toBe("LLM Impact Radar Report - Example Project");
+  });
+
+  it("does not treat the end marker as a report start", () => {
+    expect(parseReportOutput(`${REPORT_OUTPUT_END_MARKER} ${JSON.stringify(validReport)}`)).toBeNull();
+  });
+
   it("keeps accepting the legacy html comment marker", () => {
     const report = parseReportOutput(
       `${LEGACY_REPORT_OUTPUT_MARKER}\n${JSON.stringify(validReport)}`,

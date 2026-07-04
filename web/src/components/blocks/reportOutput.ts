@@ -373,7 +373,13 @@ export function reportPayloadText(text: string): string | null {
 }
 
 function findReportMarker(text: string): { end: number } | null {
-  const visibleMatch = /(^|\n)\s*REPORT_OUTPUT\s*(?:\n|$)/.exec(text);
+  const visibleMarkerPattern = /REPORT_OUTPUT(?:\s*\n|\s*(?=\{)|\s*$)/g;
+  let visibleMatch: RegExpExecArray | null = null;
+
+  while ((visibleMatch = visibleMarkerPattern.exec(text))) {
+    if (text.slice(visibleMatch.index - 4, visibleMatch.index) !== "END_") break;
+  }
+
   const legacyIndex = text.indexOf(LEGACY_REPORT_OUTPUT_MARKER);
 
   if (visibleMatch && (legacyIndex < 0 || visibleMatch.index <= legacyIndex)) {

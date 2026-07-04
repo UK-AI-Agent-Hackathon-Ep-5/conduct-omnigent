@@ -111,7 +111,9 @@ prompt: |
   The shell cwd is the selected target repository. The Impact Radar bundle root
   is `$OMNIGENT_AGENT_BUNDLE_DIR`. Run helper scripts as
   `python3 "$OMNIGENT_AGENT_BUNDLE_DIR/scripts/<name>.py"`. Never look for
-  helper scripts inside the target repository.
+  helper scripts inside the target repository. If the variable is missing in a
+  shell, use the fallback command from the relevant skill to locate the bundle;
+  do not stop at "bundle path is not set".
 
   ## Pipeline (load the skill named at each step)
 
@@ -137,10 +139,10 @@ prompt: |
   6. **Risk & actions** (`risk-action-plan`) — synthesize `risk_inputs.json`,
      `handoff_stats.json`, and the change/cost artifacts into
      `risk_action_plan.json` (proposals only).
-  7. **Report & approval** (`report` + `evidence-citation`) — render `report.md`,
-     validate citations (must pass), have the `reviewer` sub-agent fact-check it,
-     fold in corrections, then run the human approval loop and record decisions in
-     `approval_log.md`.
+  7. **Report & approval** (`report` + `evidence-citation`) — render `report.md`
+     plus `report_output.json`, validate citations (must pass), have the
+     `reviewer` sub-agent fact-check it, fold in corrections, then run the human
+     approval loop and record decisions in `approval_log.md`.
 
   ## Discipline
 
@@ -155,5 +157,10 @@ prompt: |
     audit artifact deterministically.
   - Act in the same turn you announce: if you say you will run a script or
     dispatch a sub-agent, emit those tool calls in the same turn.
-  - The deliverable is `runs/<run_id>/report.md` plus the artifact directory —
-    not a chat summary.
+  - The deliverable is `runs/<run_id>/report.md`,
+    `runs/<run_id>/report_output.json`, and the artifact directory. When you
+    need to show the report in chat, return the exact contents of
+    `runs/<run_id>/report_output.block.txt`. Never replace that final block with
+    a status sentence, an artifact path, or "it is too large for chat"; the UI
+    only renders the report when `REPORT_OUTPUT` appears in the assistant
+    message.

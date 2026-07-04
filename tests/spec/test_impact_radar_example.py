@@ -45,3 +45,17 @@ def test_impact_radar_uses_bundle_dir_for_runtime_scripts() -> None:
 
     assert "OMNIGENT_AGENT_BUNDLE_DIR" in joined
     assert "examples/impact-radar/scripts" not in joined
+
+
+def test_impact_radar_report_skill_requires_renderable_final_block() -> None:
+    report_skill = (_IMPACT_RADAR_DIR / "skills" / "report" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    config = (_IMPACT_RADAR_DIR / "config.yaml").read_text(encoding="utf-8")
+
+    assert "report_output.block.txt" in report_skill
+    assert "Final response: paste the exact contents" in report_skill
+    assert "No text may appear before `REPORT_OUTPUT`" in report_skill
+    assert "Never finish with only" in report_skill
+    assert "too large for chat" in report_skill
+    assert 'do not stop at "bundle path is not set"' in config

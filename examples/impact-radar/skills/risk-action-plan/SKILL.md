@@ -14,8 +14,11 @@ execute actions.
 
 ## Severity Model
 
+- **critical**: a deprecated model is used in a production-tier or high-likelihood
+  runtime path and the shutdown is already active or within 30 days.
 - **high**: a deprecated model is used in a production-tier feature, a shutdown
-  deadline is near, or a callsite has high `migration_risk` and high `risk_score`.
+  deadline is approaching after the 30-day critical window, or a callsite has
+  high `migration_risk` and high `risk_score`.
 - **medium**: a price increase affects a high-volume feature, a replacement needs
   compatibility review, or verification gaps remain for important code paths.
 - **low**: small cost movements, new-model opportunities, or informational
@@ -35,7 +38,7 @@ execute actions.
 3. Write `runs/<run_id>/risk_action_plan.json` as a JSON list of items:
    `severity`, `title`, `rationale`, `recommended_action`, `owner`, `deadline`,
    `affected_files`, `evidence_ids`.
-4. Order by severity, then by `risk_score`, then by `delta_usd`.
+4. Order by severity (`critical` first), then by `risk_score`, then by `delta_usd`.
 
 ## Rules
 

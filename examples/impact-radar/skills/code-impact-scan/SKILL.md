@@ -23,8 +23,9 @@ you never modify it.
    regex fallback. The output shape is identical.
 3. Read `code_impact.json`. Each finding has `file`, `line`, `snippet`,
    `category` (`import`|`client_call`|`model_literal`), `provider`, `model`,
-   `matched_change_ids`, and a `severity` hint (`high` for a used deprecated
-   model, `medium` for a price increase, else `low`/`info`).
+   `matched_change_ids`, and a `severity` hint (`critical` for a used deprecated
+   model with shutdown within 30 days, `high` for a later used deprecated model,
+   `medium` for a price increase, else `low`/`info`).
 4. Cross-reference `$OMNIGENT_AGENT_BUNDLE_DIR/data/feature_map.yaml` to
    translate affected files into the owning feature and team, so the report
    speaks in product terms.
@@ -37,7 +38,7 @@ you never modify it.
   paths and caps evidence snippets by default. Use `--exclude-dir`,
   `--exclude-path`, `--max-file-bytes`, or `--max-snippet-chars` only when the
   target repository needs tighter bounds.
-- Treat a `high` finding (deprecated model in use) as an action item with a
-  deadline = the change card's `shutdown_date`.
+- Treat a `critical` or `high` finding (deprecated model in use) as an action
+  item with a deadline = the change card's `shutdown_date`.
 - The scanner can match a model name inside a comment. Keep those but mark them
   lower priority than a real `model_literal` assignment or `client_call`.

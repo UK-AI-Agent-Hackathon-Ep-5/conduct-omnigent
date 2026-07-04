@@ -17,7 +17,6 @@ from typing import Any
 
 from schema import load_json, write_json
 
-
 LIKELIHOOD_BY_CATEGORY = {
     "client_call": ("high", 0.9),
     "model_literal": ("medium", 0.7),
@@ -25,6 +24,7 @@ LIKELIHOOD_BY_CATEGORY = {
 }
 
 RISK_BY_SEVERITY = {
+    "critical": ("critical", 1.0),
     "high": ("high", 0.9),
     "medium": ("medium", 0.65),
     "low": ("low", 0.35),
@@ -39,7 +39,7 @@ def _parse_inline_list(value: str) -> list[str]:
     body = value[1:-1].strip()
     if not body:
         return []
-    return [item.strip().strip('"\'') for item in body.split(",")]
+    return [item.strip().strip("\"'") for item in body.split(",")]
 
 
 def _parse_feature_map(path: Path | None) -> dict[str, dict[str, Any]]:
@@ -69,12 +69,14 @@ def _parse_feature_map(path: Path | None) -> dict[str, dict[str, Any]]:
             if value.startswith("["):
                 features[current][key] = _parse_inline_list(value)
             else:
-                features[current][key] = value.strip('"\'')
+                features[current][key] = value.strip("\"'")
 
     return features
 
 
-def _match_feature(finding: dict[str, Any], features: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+def _match_feature(
+    finding: dict[str, Any], features: dict[str, dict[str, Any]]
+) -> dict[str, Any] | None:
     file_path = (finding.get("file") or "").replace("\\", "/")
     model = finding.get("model")
 
@@ -89,7 +91,9 @@ def _match_feature(finding: dict[str, Any], features: dict[str, dict[str, Any]])
     return None
 
 
-def _cost_lookup(cost_impact: dict[str, Any]) -> dict[tuple[str | None, str | None], dict[str, Any]]:
+def _cost_lookup(
+    cost_impact: dict[str, Any],
+) -> dict[tuple[str | None, str | None], dict[str, Any]]:
     lookup: dict[tuple[str | None, str | None], dict[str, Any]] = {}
     for row in cost_impact.get("rows", []) if isinstance(cost_impact, dict) else []:
         lookup[(row.get("feature"), row.get("model"))] = row
@@ -97,7 +101,9 @@ def _cost_lookup(cost_impact: dict[str, Any]) -> dict[tuple[str | None, str | No
     return lookup
 
 
-def _research_lookup(external_research: dict[str, Any]) -> dict[tuple[str | None, str | None], dict[str, Any]]:
+def _research_lookup(
+    external_research: dict[str, Any],
+) -> dict[tuple[str | None, str | None], dict[str, Any]]:
     lookup: dict[tuple[str | None, str | None], dict[str, Any]] = {}
     if not isinstance(external_research, dict):
         return lookup
@@ -165,8 +171,12 @@ def _record(
         likelihood_label = "high"
         likelihood_score = max(likelihood_score, 0.85)
     if finding.get("matched_change_ids") and feature and feature.get("tier") == "production":
-        risk_score = max(risk_score, 0.7)
-        risk_label = "high" if severity == "high" else "medium"
+        if severity == "critical":
+            risk_score = max(risk_score, 0.98)
+            risk_label = "critical"
+        else:
+            risk_score = max(risk_score, 0.7)
+            risk_label = "high" if severity == "high" else "medium"
 
     feature_name = feature.get("name") if feature else None
     return {
@@ -201,8 +211,14 @@ def _record(
             "next_agent": "report-generator",
             "recommended_action": "include_in_migration_assessment",
         },
-        "needs_external_verification": _verification_needs(finding, feature, cost_row, research_row),
-        "confidence": "medium" if category == "model_literal" else "low" if category == "import" else "high",
+        "needs_external_verification": _verification_needs(
+            finding, feature, cost_row, research_row
+        ),
+        "confidence": "medium"
+        if category == "model_literal"
+        else "low"
+        if category == "import"
+        else "high",
         "evidence": {"snippet": finding.get("snippet")},
     }
 
@@ -220,8 +236,12 @@ def build_handoff(
     for finding in code_findings:
         feature = _match_feature(finding, features)
         feature_name = feature.get("name") if feature else None
-        cost_row = costs.get((feature_name, finding.get("model"))) or costs.get((None, finding.get("model")))
-        research_row = research.get((finding.get("provider"), finding.get("model"))) or research.get((None, finding.get("model")))
+        cost_row = costs.get((feature_name, finding.get("model"))) or costs.get(
+            (None, finding.get("model"))
+        )
+        research_row = research.get(
+            (finding.get("provider"), finding.get("model"))
+        ) or research.get((None, finding.get("model")))
         records.append(_record(finding, feature, cost_row, research_row))
 
     return {
@@ -232,14 +252,22 @@ def build_handoff(
         "records": records,
         "contract_notes": [
             "One record represents one scanned LLM API/model touchpoint.",
-            "Scores are deterministic heuristics from category, severity, feature tier, and matched changes.",
+            "Scores are deterministic heuristics from category, severity, "
+            "feature tier, and matched changes.",
             "Cost fields are copied from cost_impact.json when usage/pricing data can be matched.",
-            "External model facts are copied from external_research.json when provider/model can be matched.",
+            "External model facts are copied from external_research.json "
+            "when provider/model can be matched.",
         ],
         "external_research": {
-            "schema_version": external_research.get("schema_version") if isinstance(external_research, dict) else None,
-            "research_timestamp": external_research.get("research_timestamp") if isinstance(external_research, dict) else None,
-            "model_count": len(external_research.get("models", [])) if isinstance(external_research, dict) else 0,
+            "schema_version": external_research.get("schema_version")
+            if isinstance(external_research, dict)
+            else None,
+            "research_timestamp": external_research.get("research_timestamp")
+            if isinstance(external_research, dict)
+            else None,
+            "model_count": len(external_research.get("models", []))
+            if isinstance(external_research, dict)
+            else 0,
         },
     }
 
@@ -249,7 +277,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--code", type=Path, required=True, help="code_impact.json from scan_code.py")
     ap.add_argument("--feature-map", type=Path, default=None, help="data/feature_map.yaml")
     ap.add_argument("--cost", type=Path, default=None, help="cost_impact.json from cost_impact.py")
-    ap.add_argument("--external-research", type=Path, default=None, help="external_research.json from the research agent")
+    ap.add_argument(
+        "--external-research",
+        type=Path,
+        default=None,
+        help="external_research.json from the research agent",
+    )
     ap.add_argument("--repo", default=None, help="Scanned repository/path label")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
@@ -260,7 +293,11 @@ def main(argv: list[str] | None = None) -> int:
 
     features = _parse_feature_map(args.feature_map)
     cost_impact = load_json(args.cost) if args.cost and args.cost.exists() else {}
-    external_research = load_json(args.external_research) if args.external_research and args.external_research.exists() else {}
+    external_research = (
+        load_json(args.external_research)
+        if args.external_research and args.external_research.exists()
+        else {}
+    )
     payload = build_handoff(code_findings, features, cost_impact, external_research, args.repo)
     write_json(args.out, payload)
     print(f"wrote {payload['record_count']} handoff records -> {args.out}")
