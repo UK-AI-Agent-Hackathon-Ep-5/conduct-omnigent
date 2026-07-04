@@ -4,16 +4,21 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
 } from "react";
 import {
   ActivityIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
   BarChart3Icon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleDollarSignIcon,
+  DownloadIcon,
   ExternalLinkIcon,
+  GripVerticalIcon,
   MessageSquareTextIcon,
   PenLineIcon,
   QuoteIcon,
@@ -45,6 +50,8 @@ const SECTION_WHEEL_SCROLL_SPEED = 2;
 const SECTION_WHEEL_LINE_HEIGHT = 40;
 const SECTION_WHEEL_ANIMATION_MS = 180;
 const SECTION_BUTTON_SCROLL_STEP = 520;
+const REPORT_SECTION_EDITS_STORAGE_PREFIX = "omnigent.reportSectionEdits";
+const REPORT_SECTION_ORDER_STORAGE_PREFIX = "omnigent.reportSectionOrder";
 
 const SEVERITY_STYLE: Record<
   ReportSeverity,
@@ -113,6 +120,11 @@ type ReportTextSelection = {
   source: "report" | "chat";
 };
 
+type RefineHighlight = {
+  text: string;
+  state: "refining" | "updated";
+};
+
 type ReportDialogMessage = {
   id: string;
   role: "user" | "assistant";
@@ -133,13 +145,28 @@ interface ReportOutputViewProps {
 export function ReportOutputView({ report, isStreaming = false }: ReportOutputViewProps) {
   const [activeId, setActiveId] = useState(report.sections[0]?.id ?? "");
   const [detailOpen, setDetailOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [chatHistories, setChatHistories] = useState<Record<string, ReportDialogMessage[]>>({});
-  const [sectionContentEdits, setSectionContentEdits] = useState<Record<string, string>>({});
+  const reportEditStorageKey = useMemo(() => reportSectionEditStorageKey(report), [report]);
+  const reportOrderStorageKey = useMemo(() => reportSectionOrderStorageKey(report), [report]);
+  const reportSectionIds = useMemo(
+    () => report.sections.map((section) => section.id),
+    [report.sections],
+  );
+  const [sectionContentEdits, setSectionContentEdits] = useState<Record<string, string>>(() =>
+    readReportSectionEdits(reportEditStorageKey),
+  );
+  const [sectionOrder, setSectionOrder] = useState<string[]>(() =>
+    mergeSectionOrder(readReportSectionOrder(reportOrderStorageKey), report.sections),
+  );
+  const [draftSectionOrder, setDraftSectionOrder] = useState<string[]>(() =>
+    mergeSectionOrder(readReportSectionOrder(reportOrderStorageKey), report.sections),
+  );
   const scrollerRef = useRef<HTMLDivElement>(null);
   const chatMessageIdRef = useRef(0);
   const reportChat = useReportChat();
 
-  const sections = useMemo(
+  const editedSections = useMemo(
     () =>
       report.sections.map((section) =>
         sectionContentEdits[section.id] !== undefined
@@ -148,6 +175,14 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
       ),
     [report.sections, sectionContentEdits],
   );
+  const sections = useMemo(
+    () => orderReportSections(editedSections, sectionOrder),
+    [editedSections, sectionOrder],
+  );
+  const exportDraftSections = useMemo(
+    () => orderReportSections(editedSections, draftSectionOrder),
+    [editedSections, draftSectionOrder],
+  );
   const activeSection = sections.find((section) => section.id === activeId) ?? sections[0] ?? null;
   const counts = useMemo(() => severityCounts(sections), [sections]);
   const totalFindings = sections.filter((section) => section.type !== "source").length;
@@ -155,6 +190,20 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
   const rawTargetLabel = report.target?.name ?? report.target?.path ?? "Report target";
   const targetLabel = cleanReportText(rawTargetLabel, "Report target");
   const generatedLabel = formatGeneratedAt(report.generated_at);
+
+  useEffect(() => {
+    setSectionContentEdits(readReportSectionEdits(reportEditStorageKey));
+  }, [reportEditStorageKey]);
+
+  useEffect(() => {
+    const storedOrder = readReportSectionOrder(reportOrderStorageKey);
+    setSectionOrder((prev) =>
+      mergeSectionOrder(storedOrder.length > 0 ? storedOrder : prev, report.sections),
+    );
+    setDraftSectionOrder((prev) =>
+      mergeSectionOrder(storedOrder.length > 0 ? storedOrder : prev, report.sections),
+    );
+  }, [report.sections, reportOrderStorageKey]);
 
   useEffect(() => {
     const currentScroller = scrollerRef.current;
@@ -234,6 +283,34 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
     setDetailOpen(true);
   }
 
+  function openExportDialog() {
+    setDraftSectionOrder(mergeSectionOrder(sectionOrder, report.sections));
+    setExportDialogOpen(true);
+  }
+
+  function reorderDraftSections(sourceId: string, targetId: string) {
+    setDraftSectionOrder((prev) =>
+      reorderSectionBeforeTarget(mergeSectionOrder(prev, report.sections), sourceId, targetId),
+    );
+  }
+
+  function moveDraftSection(sectionId: string, direction: -1 | 1) {
+    setDraftSectionOrder((prev) =>
+      moveSectionInOrder(mergeSectionOrder(prev, report.sections), sectionId, direction),
+    );
+  }
+
+  function resetDraftSectionOrder() {
+    setDraftSectionOrder(reportSectionIds);
+  }
+
+  function applyDraftSectionOrder() {
+    const nextOrder = mergeSectionOrder(draftSectionOrder, report.sections);
+    setSectionOrder(nextOrder);
+    writeReportSectionOrder(reportOrderStorageKey, nextOrder);
+    setExportDialogOpen(false);
+  }
+
   function nextChatMessageId(sectionId: string): string {
     chatMessageIdRef.current += 1;
     return `${sectionId}-${chatMessageIdRef.current}`;
@@ -265,7 +342,9 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
       const currentContent = prev[sectionId] ?? originalSection?.content ?? "";
       const nextContent = replaceSelectedReportText(currentContent, selectedText, replacementText);
       if (nextContent === cleanReportText(currentContent)) return prev;
-      return { ...prev, [sectionId]: nextContent };
+      const next = { ...prev, [sectionId]: nextContent };
+      writeReportSectionEdits(reportEditStorageKey, next);
+      return next;
     });
   }
 
@@ -281,18 +360,24 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
       />
       <header className="relative grid gap-5 border-border/70 border-b p-4 md:p-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <div className="min-w-0 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-accent/25 bg-brand-accent/10 px-2.5 py-1 font-medium text-brand-accent text-xs">
-              {isStreaming ? (
-                <ActivityIcon className="size-3.5 motion-safe:animate-pulse" />
-              ) : (
-                <BarChart3Icon className="size-3.5" />
-              )}
-              {isStreaming ? "Generating report" : "Report"}
-            </span>
-            <span className="rounded-full border border-border/70 bg-background/50 px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
-              {report.run_id}
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-accent/25 bg-brand-accent/10 px-2.5 py-1 font-medium text-brand-accent text-xs">
+                {isStreaming ? (
+                  <ActivityIcon className="size-3.5 motion-safe:animate-pulse" />
+                ) : (
+                  <BarChart3Icon className="size-3.5" />
+                )}
+                {isStreaming ? "Generating report" : "Report"}
+              </span>
+              <span className="rounded-full border border-border/70 bg-background/50 px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
+                {report.run_id}
+              </span>
+            </div>
+            <Button type="button" size="sm" className="shrink-0" onClick={openExportDialog}>
+              <DownloadIcon className="size-4" />
+              Export PPTX
+            </Button>
           </div>
 
           <div className="space-y-2">
@@ -392,6 +477,16 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
           }
         />
       )}
+      <ReportExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        reportTitle={reportTitle}
+        sections={exportDraftSections}
+        onReorder={reorderDraftSections}
+        onMove={moveDraftSection}
+        onReset={resetDraftSectionOrder}
+        onApply={applyDraftSectionOrder}
+      />
     </section>
   );
 }
@@ -425,8 +520,10 @@ function ReportSectionDialog({
   const [draft, setDraft] = useState("");
   const [reportSelection, setReportSelection] = useState<ReportTextSelection | null>(null);
   const [chatSelection, setChatSelection] = useState<ReportTextSelection | null>(null);
+  const [refineHighlight, setRefineHighlight] = useState<RefineHighlight | null>(null);
   const reportTextRef = useRef<HTMLParagraphElement>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
+  const refineHighlightTimerRef = useRef<number | null>(null);
   const sanitizedReport = useMemo(
     () => ({ ...report, title: reportTitle, target: sanitizeReportTarget(report.target) }),
     [report, reportTitle],
@@ -452,11 +549,35 @@ function ReportSectionDialog({
   const draftPlaceholder = mode === "refine" ? "Describe the edit" : "Ask about this section";
   const submitLabel = mode === "refine" ? "Refine" : "Ask";
 
+  function clearRefineHighlightTimer() {
+    if (refineHighlightTimerRef.current === null) return;
+    window.clearTimeout(refineHighlightTimerRef.current);
+    refineHighlightTimerRef.current = null;
+  }
+
+  function showUpdatedHighlight(text: string) {
+    clearRefineHighlightTimer();
+    setRefineHighlight({ text, state: "updated" });
+    refineHighlightTimerRef.current = window.setTimeout(() => {
+      setRefineHighlight(null);
+      refineHighlightTimerRef.current = null;
+    }, 2600);
+  }
+
   useEffect(() => {
     setDraft("");
     setReportSelection(null);
     setChatSelection(null);
+    setRefineHighlight(null);
+    clearRefineHighlightTimer();
   }, [section.id]);
+
+  useEffect(
+    () => () => {
+      clearRefineHighlightTimer();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -497,6 +618,10 @@ function ReportSectionDialog({
     const quote = mode === "refine" ? selectedReportText : (activeSelection?.text ?? null);
     const userMessageId = nextMessageId();
     const responseMessageId = nextMessageId();
+    if (mode === "refine" && quote) {
+      clearRefineHighlightTimer();
+      setRefineHighlight({ text: quote, state: "refining" });
+    }
     appendMessages([
       {
         id: userMessageId,
@@ -555,6 +680,7 @@ function ReportSectionDialog({
         }
         const replacementText = cleanRefinedReportText(response, quote);
         replaceSelectedText(quote, replacementText);
+        showUpdatedHighlight(replacementText);
         updateMessage(responseMessageId, {
           content: replacementText,
           status: "done",
@@ -566,6 +692,9 @@ function ReportSectionDialog({
         status: "done",
       });
     } catch (error) {
+      if (requestMode === "refine") {
+        setRefineHighlight(null);
+      }
       updateMessage(responseMessageId, {
         content: error instanceof Error ? error.message : "The report chat failed.",
         status: "error",
@@ -623,13 +752,37 @@ function ReportSectionDialog({
                   <SparklesIcon className="size-3.5 shrink-0 text-brand-accent" />
                   <span className="font-medium text-muted-foreground text-xs">Finding</span>
                 </div>
-                <span className="shrink-0 text-muted-foreground text-xs">
-                  {sectionTypeLabel(section.type)}
-                </span>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs">
+                  {refineHighlight && (
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5",
+                        refineHighlight.state === "refining"
+                          ? "border-brand-accent/35 bg-brand-accent/10 text-brand-accent"
+                          : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                      )}
+                      data-testid="report-section-refine-status"
+                    >
+                      <ActivityIcon
+                        className={cn(
+                          "size-3",
+                          refineHighlight.state === "refining" && "motion-safe:animate-pulse",
+                        )}
+                      />
+                      {refineHighlight.state === "refining"
+                        ? "Refining selected text"
+                        : "Updated selected text"}
+                    </span>
+                  )}
+                  <span className="text-muted-foreground">{sectionTypeLabel(section.type)}</span>
+                </div>
               </div>
               <div className="p-4">
                 <p ref={reportTextRef} className="whitespace-pre-wrap text-sm leading-6">
-                  {cleanReportText(section.content)}
+                  <ReportSectionContentText
+                    highlight={refineHighlight}
+                    text={cleanReportText(section.content)}
+                  />
                 </p>
                 <CitationChips section={section} />
               </div>
@@ -743,7 +896,11 @@ function ReportSectionDialog({
                         {(message.status === "sending" || message.status === "streaming") && (
                           <span className="mt-2 inline-flex items-center gap-1 text-muted-foreground text-xs">
                             <ActivityIcon className="size-3 motion-safe:animate-pulse" />
-                            {message.status === "sending" ? "Sending" : "Responding"}
+                            {message.mode === "refine"
+                              ? "Refining"
+                              : message.status === "sending"
+                                ? "Sending"
+                                : "Responding"}
                           </span>
                         )}
                       </div>
@@ -810,6 +967,196 @@ function ReportSectionDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ReportExportDialog({
+  open,
+  onOpenChange,
+  reportTitle,
+  sections,
+  onReorder,
+  onMove,
+  onReset,
+  onApply,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  reportTitle: string;
+  sections: ReportSection[];
+  onReorder: (sourceId: string, targetId: string) => void;
+  onMove: (sectionId: string, direction: -1 | 1) => void;
+  onReset: () => void;
+  onApply: () => void;
+}) {
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  function handleDragStart(event: DragEvent<HTMLLIElement>, sectionId: string) {
+    setDraggingId(sectionId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", sectionId);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLLIElement>) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  function handleDrop(event: DragEvent<HTMLLIElement>, targetId: string) {
+    event.preventDefault();
+    const sourceId = event.dataTransfer.getData("text/plain") || draggingId;
+    if (sourceId && sourceId !== targetId) {
+      onReorder(sourceId, targetId);
+    }
+    setDraggingId(null);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="flex h-[min(88vh,44rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:w-[min(92vw,44rem)] sm:max-w-none"
+        data-testid="report-export-dialog"
+      >
+        <DialogHeader className="border-border/70 border-b bg-popover/95 p-4 pr-12 backdrop-blur">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <DialogTitle className="text-balance text-lg leading-tight">
+                Customize PPTX export
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Reorder report sections before exporting a presentation
+              </DialogDescription>
+              <p className="line-clamp-1 text-muted-foreground text-xs">{reportTitle}</p>
+            </div>
+            <span className="rounded-full border border-border/70 bg-background/60 px-2.5 py-1 text-muted-foreground text-xs">
+              {sections.length} sections
+            </span>
+          </div>
+        </DialogHeader>
+
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-background/35 p-4"
+          data-testid="report-export-scroll-area"
+        >
+          <div className="grid gap-3 sm:grid-cols-3">
+            <DataTile label="Deck title" value={reportTitle} />
+            <DataTile label="Theme" value="Report default" />
+            <DataTile label="Notes" value="Included" />
+          </div>
+
+          <ol
+            className="mt-4 space-y-2"
+            data-testid="report-export-order-list"
+            aria-label="PPTX section order"
+          >
+            {sections.map((section, index) => {
+              const title = cleanReportText(section.title, "Untitled section");
+              const isDragging = draggingId === section.id;
+              return (
+                <li
+                  key={section.id}
+                  draggable
+                  onDragStart={(event) => handleDragStart(event, section.id)}
+                  onDragOver={handleDragOver}
+                  onDrop={(event) => handleDrop(event, section.id)}
+                  onDragEnd={() => setDraggingId(null)}
+                  className={cn(
+                    "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border/70 bg-card/75 p-3 transition-[border-color,background-color,box-shadow] duration-200",
+                    isDragging && "border-brand-accent/60 bg-brand-accent/10 shadow-md",
+                  )}
+                  data-testid="report-export-section-row"
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/70 text-muted-foreground">
+                    <GripVerticalIcon className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="font-mono text-muted-foreground text-xs tabular-nums">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <span className="truncate font-medium text-sm">{title}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-1 text-muted-foreground text-xs">
+                      {sectionTypeLabel(section.type)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Move ${title} up`}
+                      disabled={index === 0}
+                      onClick={() => onMove(section.id, -1)}
+                    >
+                      <ArrowUpIcon className="size-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Move ${title} down`}
+                      disabled={index === sections.length - 1}
+                      onClick={() => onMove(section.id, 1)}
+                    >
+                      <ArrowDownIcon className="size-4" />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-border/70 border-t bg-background/85 p-3">
+          <Button type="button" variant="ghost" onClick={onReset}>
+            Reset
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={onApply}>
+              Apply order
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReportSectionContentText({
+  text,
+  highlight,
+}: {
+  text: string;
+  highlight: RefineHighlight | null;
+}) {
+  if (!highlight) return <>{text}</>;
+  const index = text.indexOf(highlight.text);
+  if (index < 0) return <>{text}</>;
+  const testId =
+    highlight.state === "refining"
+      ? "report-section-refine-target"
+      : "report-section-refined-target";
+
+  return (
+    <>
+      {text.slice(0, index)}
+      <span
+        className={cn(
+          "box-decoration-clone rounded px-1 py-0.5 text-foreground ring-1 transition-colors",
+          highlight.state === "refining"
+            ? "bg-brand-accent/15 ring-brand-accent/50 motion-safe:animate-pulse"
+            : "bg-emerald-500/15 ring-emerald-500/45",
+        )}
+        data-testid={testId}
+      >
+        {highlight.text}
+      </span>
+      {text.slice(index + highlight.text.length)}
+    </>
   );
 }
 
@@ -1412,6 +1759,121 @@ function buildReportSectionQuestion(
 function buildReportChatThreadKey(report: ReportOutput, section: ReportSection): string {
   const reportKey = cleanReportText(report.run_id || report.generated_at || report.title, "report");
   return `${reportKey}:${section.id}`;
+}
+
+function orderReportSections(sections: ReportSection[], order: string[]): ReportSection[] {
+  const byId = new Map(sections.map((section) => [section.id, section]));
+  return mergeSectionOrder(order, sections).flatMap((id) => {
+    const section = byId.get(id);
+    return section ? [section] : [];
+  });
+}
+
+function mergeSectionOrder(order: string[], sections: ReportSection[]): string[] {
+  const sectionIds = new Set(sections.map((section) => section.id));
+  const nextOrder: string[] = [];
+  for (const id of order) {
+    if (!sectionIds.has(id) || nextOrder.includes(id)) continue;
+    nextOrder.push(id);
+  }
+  for (const section of sections) {
+    if (!nextOrder.includes(section.id)) nextOrder.push(section.id);
+  }
+  return nextOrder;
+}
+
+function reorderSectionBeforeTarget(order: string[], sourceId: string, targetId: string): string[] {
+  if (sourceId === targetId) return order;
+  const withoutSource = order.filter((id) => id !== sourceId);
+  const targetIndex = withoutSource.indexOf(targetId);
+  if (targetIndex < 0) return order;
+  return [...withoutSource.slice(0, targetIndex), sourceId, ...withoutSource.slice(targetIndex)];
+}
+
+function moveSectionInOrder(order: string[], sectionId: string, direction: -1 | 1): string[] {
+  const currentIndex = order.indexOf(sectionId);
+  if (currentIndex < 0) return order;
+  const nextIndex = currentIndex + direction;
+  if (nextIndex < 0 || nextIndex >= order.length) return order;
+  const next = [...order];
+  const [section] = next.splice(currentIndex, 1);
+  if (!section) return order;
+  next.splice(nextIndex, 0, section);
+  return next;
+}
+
+function reportSectionEditStorageKey(report: ReportOutput): string {
+  const target = report.target?.path ?? report.target?.name ?? "";
+  const identity = [
+    report.run_id,
+    report.generated_at,
+    report.title,
+    target,
+    String(report.report_version),
+  ]
+    .map((part) => cleanReportText(part))
+    .join("|");
+  return `${REPORT_SECTION_EDITS_STORAGE_PREFIX}:${identity}`;
+}
+
+function reportSectionOrderStorageKey(report: ReportOutput): string {
+  return reportSectionEditStorageKey(report).replace(
+    REPORT_SECTION_EDITS_STORAGE_PREFIX,
+    REPORT_SECTION_ORDER_STORAGE_PREFIX,
+  );
+}
+
+function readReportSectionEdits(storageKey: string): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => {
+        const [key, value] = entry;
+        return key.length > 0 && typeof value === "string" && value.length > 0;
+      }),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeReportSectionEdits(storageKey: string, edits: Record<string, string>) {
+  if (typeof window === "undefined") return;
+  try {
+    if (Object.keys(edits).length === 0) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+    window.localStorage.setItem(storageKey, JSON.stringify(edits));
+  } catch {
+    // Browser storage can be disabled or full. The in-memory edit still applies.
+  }
+}
+
+function readReportSectionOrder(storageKey: string): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === "string" && item.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function writeReportSectionOrder(storageKey: string, order: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(order));
+  } catch {
+    // Browser storage can be disabled or full. The applied order still works in memory.
+  }
 }
 
 function selectedModalText(container: HTMLElement | null): string {

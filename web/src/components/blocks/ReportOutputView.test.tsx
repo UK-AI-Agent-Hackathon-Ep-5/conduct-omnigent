@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ReportChatProvider, type ReportChatRequest } from "./ReportChatContext";
 import { ReportOutputView } from "./ReportOutputView";
 import type { ReportOutput } from "./reportOutput";
@@ -108,7 +108,44 @@ function firstTextNode(element: Element): Node {
   return element.firstChild ?? element;
 }
 
+function mockDataTransfer(): DataTransfer {
+  const data = new Map<string, string>();
+  return {
+    effectAllowed: "none",
+    dropEffect: "none",
+    setData: vi.fn((type: string, value: string) => {
+      data.set(type, value);
+    }),
+    getData: vi.fn((type: string) => data.get(type) ?? ""),
+  } as unknown as DataTransfer;
+}
+
+const localStorageEntries = new Map<string, string>();
+
+function installLocalStorageMock() {
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => localStorageEntries.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        localStorageEntries.set(key, value);
+      },
+      removeItem: (key: string) => {
+        localStorageEntries.delete(key);
+      },
+      clear: () => {
+        localStorageEntries.clear();
+      },
+    },
+  });
+}
+
 describe("ReportOutputView", () => {
+  beforeEach(() => {
+    localStorageEntries.clear();
+    installLocalStorageMock();
+  });
+
   it("renders a horizontal section preview strip without inline detail", () => {
     render(<ReportOutputView report={REPORT} enablePixi={false} />);
 
@@ -221,6 +258,37 @@ describe("ReportOutputView", () => {
     expect(screen.queryByTestId("report-section-dialog")).toBeNull();
   });
 
+  it("opens the PPTX export modal and applies dragged section order", () => {
+    render(<ReportOutputView report={REPORT} enablePixi={false} />);
+
+    const exportButton = screen.getByRole("button", { name: "Export PPTX" });
+    expect(exportButton.closest("header")).toBeDefined();
+
+    fireEvent.click(exportButton);
+    const dialog = screen.getByTestId("report-export-dialog");
+    expect(dialog.className).toContain("h-[min(88vh,44rem)]");
+    expect(within(dialog).getByTestId("report-export-scroll-area").className).toContain(
+      "overflow-y-auto",
+    );
+    let rows = within(dialog).getAllByTestId("report-export-section-row");
+    expect(within(rows[0]!).getAllByText("Executive Summary").length).toBeGreaterThan(0);
+    expect(within(rows[2]!).getByText("Hardcoded DeepSeek Chat Model")).toBeDefined();
+
+    const dataTransfer = mockDataTransfer();
+    fireEvent.dragStart(rows[2]!, { dataTransfer });
+    fireEvent.dragOver(rows[0]!, { dataTransfer });
+    fireEvent.drop(rows[0]!, { dataTransfer });
+
+    rows = within(dialog).getAllByTestId("report-export-section-row");
+    expect(within(rows[0]!).getByText("Hardcoded DeepSeek Chat Model")).toBeDefined();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply order" }));
+
+    const strip = screen.getByTestId("report-section-strip");
+    const previewButtons = within(strip).getAllByRole("button");
+    expect(within(previewButtons[0]!).getByText("Hardcoded DeepSeek Chat Model")).toBeDefined();
+  });
+
   it("keeps section chat inside the modal and sends questions with Enter", async () => {
     const onReportChat = vi.fn(async (request: ReportChatRequest) => {
       request.onDelta?.("It points at the fallback model.");
@@ -325,6 +393,104 @@ describe("ReportOutputView", () => {
     expect(within(chatLog).getByText("Refine request")).toBeDefined();
     expect(within(chatLog).getByText("Refined text")).toBeDefined();
     expect(within(chatLog).getByText(replacement)).toBeDefined();
+
+    selectionSpy.mockRestore();
+  });
+
+  it("loads saved refined report text after remount", async () => {
+    const replacement = "Three provider references need review before release.";
+    const onReportChat = vi.fn(async () => replacement);
+    const selectionState: MockSelectionState = { text: "", anchorNode: null };
+    const selectionSpy = mockWindowSelection(selectionState);
+
+    const { unmount } = render(
+      <ReportChatProvider value={onReportChat}>
+        <ReportOutputView report={REPORT} enablePixi={false} />
+      </ReportChatProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
+    fireEvent.click(screen.getByLabelText("Refine mode"));
+    const reportText = within(screen.getByTestId("report-section-content")).getByText(
+      "Three model references need review before release.",
+    );
+    selectionState.text = "Three model references need review before release.";
+    selectionState.anchorNode = firstTextNode(reportText);
+    fireEvent.mouseUp(screen.getByTestId("report-section-content"));
+    fireEvent.change(screen.getByLabelText("Question about report section"), {
+      target: { value: "Make this clearer" },
+    });
+    fireEvent.keyDown(screen.getByLabelText("Question about report section"), { key: "Enter" });
+
+    await waitFor(() => expect(onReportChat).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("report-section-content")).getByText(replacement),
+      ).toBeDefined(),
+    );
+    selectionSpy.mockRestore();
+    unmount();
+
+    render(<ReportOutputView report={REPORT} enablePixi={false} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
+    const remountedContent = screen.getByTestId("report-section-content");
+    expect(within(remountedContent).getByText(replacement)).toBeDefined();
+    expect(
+      within(remountedContent).queryByText("Three model references need review before release."),
+    ).toBeNull();
+  });
+
+  it("shows the active refine target while the AI is editing", async () => {
+    const replacement = "Three provider references need review before release.";
+    let resolveChat: (value: string) => void = () => {};
+    const onReportChat = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveChat = resolve;
+        }),
+    );
+    const selectionState: MockSelectionState = { text: "", anchorNode: null };
+    const selectionSpy = mockWindowSelection(selectionState);
+
+    render(
+      <ReportChatProvider value={onReportChat}>
+        <ReportOutputView report={REPORT} enablePixi={false} />
+      </ReportChatProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Executive Summary/i }));
+    fireEvent.click(screen.getByLabelText("Refine mode"));
+    const reportText = within(screen.getByTestId("report-section-content")).getByText(
+      "Three model references need review before release.",
+    );
+    selectionState.text = "Three model references need review before release.";
+    selectionState.anchorNode = firstTextNode(reportText);
+    fireEvent.mouseUp(screen.getByTestId("report-section-content"));
+    fireEvent.change(screen.getByLabelText("Question about report section"), {
+      target: { value: "Make this clearer" },
+    });
+    fireEvent.keyDown(screen.getByLabelText("Question about report section"), { key: "Enter" });
+
+    await waitFor(() => expect(onReportChat).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("report-section-refine-target")).toBeDefined();
+    expect(
+      within(screen.getByTestId("report-section-refine-status")).getByText(
+        "Refining selected text",
+      ),
+    ).toBeDefined();
+    expect(
+      within(screen.getByTestId("report-section-chat-log")).getByText("Refining"),
+    ).toBeDefined();
+
+    await act(async () => {
+      resolveChat(replacement);
+    });
+
+    await waitFor(() => expect(screen.getByTestId("report-section-refined-target")).toBeDefined());
+    expect(
+      within(screen.getByTestId("report-section-refine-status")).getByText("Updated selected text"),
+    ).toBeDefined();
 
     selectionSpy.mockRestore();
   });
