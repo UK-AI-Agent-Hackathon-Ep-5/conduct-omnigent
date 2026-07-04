@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readPanelSizePreference } from "@/lib/panelSizePreferences";
 import { resetSidebarWidthStoreForTesting, useResizableSidebar } from "./useResizableSidebar";
 
@@ -9,6 +9,33 @@ import { resetSidebarWidthStoreForTesting, useResizableSidebar } from "./useResi
 // 480, so the 480px hard cap is the binding limit at this width.
 
 const originalInnerWidth = window.innerWidth;
+const localStorageEntries = new Map<string, string>();
+
+const testLocalStorage = {
+  get length() {
+    return localStorageEntries.size;
+  },
+  clear: () => {
+    localStorageEntries.clear();
+  },
+  getItem: (key: string) => localStorageEntries.get(key) ?? null,
+  key: (index: number) => Array.from(localStorageEntries.keys())[index] ?? null,
+  removeItem: (key: string) => {
+    localStorageEntries.delete(key);
+  },
+  setItem: (key: string, value: string) => {
+    localStorageEntries.set(key, value);
+  },
+} satisfies Storage;
+
+Object.defineProperty(window, "localStorage", {
+  configurable: true,
+  value: testLocalStorage,
+});
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: testLocalStorage,
+});
 
 function setInnerWidth(px: number): void {
   Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: px });
