@@ -274,6 +274,13 @@ describe("ReportOutputView", () => {
     expect(within(rows[0]!).getAllByText("Executive Summary").length).toBeGreaterThan(0);
     expect(within(rows[2]!).getByText("Hardcoded DeepSeek Chat Model")).toBeDefined();
 
+    fireEvent.click(within(rows[0]!).getByRole("checkbox", { name: "Exclude Executive Summary" }));
+    expect(
+      within(rows[0]!).getByRole("checkbox", { name: "Include Executive Summary" }),
+    ).toBeDefined();
+    expect(within(rows[0]!).getByText("Excluded / Executive Summary")).toBeDefined();
+    expect(within(dialog).getByText("2 of 3 included")).toBeDefined();
+
     const dataTransfer = mockDataTransfer();
     fireEvent.dragStart(rows[2]!, { dataTransfer });
     fireEvent.dragOver(rows[0]!, { dataTransfer });
@@ -282,11 +289,18 @@ describe("ReportOutputView", () => {
     rows = within(dialog).getAllByTestId("report-export-section-row");
     expect(within(rows[0]!).getByText("Hardcoded DeepSeek Chat Model")).toBeDefined();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Apply order" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply choices" }));
 
     const strip = screen.getByTestId("report-section-strip");
     const previewButtons = within(strip).getAllByRole("button");
     expect(within(previewButtons[0]!).getByText("Hardcoded DeepSeek Chat Model")).toBeDefined();
+
+    fireEvent.click(exportButton);
+    const reopenedDialog = screen.getByTestId("report-export-dialog");
+    const reopenedRows = within(reopenedDialog).getAllByTestId("report-export-section-row");
+    expect(
+      within(reopenedRows[1]!).getByRole("checkbox", { name: "Include Executive Summary" }),
+    ).toBeDefined();
   });
 
   it("keeps section chat inside the modal and sends questions with Enter", async () => {

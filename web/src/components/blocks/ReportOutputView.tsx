@@ -13,6 +13,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   BarChart3Icon,
+  CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleDollarSignIcon,
@@ -52,6 +53,7 @@ const SECTION_WHEEL_ANIMATION_MS = 180;
 const SECTION_BUTTON_SCROLL_STEP = 520;
 const REPORT_SECTION_EDITS_STORAGE_PREFIX = "omnigent.reportSectionEdits";
 const REPORT_SECTION_ORDER_STORAGE_PREFIX = "omnigent.reportSectionOrder";
+const REPORT_SECTION_SELECTION_STORAGE_PREFIX = "omnigent.reportSectionSelection";
 
 const SEVERITY_STYLE: Record<
   ReportSeverity,
@@ -149,6 +151,10 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
   const [chatHistories, setChatHistories] = useState<Record<string, ReportDialogMessage[]>>({});
   const reportEditStorageKey = useMemo(() => reportSectionEditStorageKey(report), [report]);
   const reportOrderStorageKey = useMemo(() => reportSectionOrderStorageKey(report), [report]);
+  const reportSelectionStorageKey = useMemo(
+    () => reportSectionSelectionStorageKey(report),
+    [report],
+  );
   const reportSectionIds = useMemo(
     () => report.sections.map((section) => section.id),
     [report.sections],
@@ -161,6 +167,12 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
   );
   const [draftSectionOrder, setDraftSectionOrder] = useState<string[]>(() =>
     mergeSectionOrder(readReportSectionOrder(reportOrderStorageKey), report.sections),
+  );
+  const [selectedExportSectionIds, setSelectedExportSectionIds] = useState<string[]>(() =>
+    mergeSectionSelection(readReportSectionSelection(reportSelectionStorageKey), report.sections),
+  );
+  const [draftSelectedExportSectionIds, setDraftSelectedExportSectionIds] = useState<string[]>(() =>
+    mergeSectionSelection(readReportSectionSelection(reportSelectionStorageKey), report.sections),
   );
   const scrollerRef = useRef<HTMLDivElement>(null);
   const chatMessageIdRef = useRef(0);
@@ -204,6 +216,16 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
       mergeSectionOrder(storedOrder.length > 0 ? storedOrder : prev, report.sections),
     );
   }, [report.sections, reportOrderStorageKey]);
+
+  useEffect(() => {
+    const storedSelection = readReportSectionSelection(reportSelectionStorageKey);
+    setSelectedExportSectionIds((prev) =>
+      mergeSectionSelection(storedSelection ?? prev, report.sections),
+    );
+    setDraftSelectedExportSectionIds((prev) =>
+      mergeSectionSelection(storedSelection ?? prev, report.sections),
+    );
+  }, [report.sections, reportSelectionStorageKey]);
 
   useEffect(() => {
     const currentScroller = scrollerRef.current;
@@ -285,6 +307,9 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
 
   function openExportDialog() {
     setDraftSectionOrder(mergeSectionOrder(sectionOrder, report.sections));
+    setDraftSelectedExportSectionIds(
+      mergeSectionSelection(selectedExportSectionIds, report.sections),
+    );
     setExportDialogOpen(true);
   }
 
@@ -302,12 +327,24 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
 
   function resetDraftSectionOrder() {
     setDraftSectionOrder(reportSectionIds);
+    setDraftSelectedExportSectionIds(reportSectionIds);
+  }
+
+  function toggleDraftExportSection(sectionId: string) {
+    setDraftSelectedExportSectionIds((prev) => {
+      const current = mergeSectionSelection(prev, report.sections);
+      if (current.includes(sectionId)) return current.filter((id) => id !== sectionId);
+      return [...current, sectionId];
+    });
   }
 
   function applyDraftSectionOrder() {
     const nextOrder = mergeSectionOrder(draftSectionOrder, report.sections);
+    const nextSelection = mergeSectionSelection(draftSelectedExportSectionIds, report.sections);
     setSectionOrder(nextOrder);
+    setSelectedExportSectionIds(nextSelection);
     writeReportSectionOrder(reportOrderStorageKey, nextOrder);
+    writeReportSectionSelection(reportSelectionStorageKey, nextSelection);
     setExportDialogOpen(false);
   }
 
@@ -482,8 +519,10 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
         onOpenChange={setExportDialogOpen}
         reportTitle={reportTitle}
         sections={exportDraftSections}
+        selectedSectionIds={draftSelectedExportSectionIds}
         onReorder={reorderDraftSections}
         onMove={moveDraftSection}
+        onToggleSection={toggleDraftExportSection}
         onReset={resetDraftSectionOrder}
         onApply={applyDraftSectionOrder}
       />
@@ -975,8 +1014,10 @@ function ReportExportDialog({
   onOpenChange,
   reportTitle,
   sections,
+  selectedSectionIds,
   onReorder,
   onMove,
+  onToggleSection,
   onReset,
   onApply,
 }: {
@@ -984,12 +1025,17 @@ function ReportExportDialog({
   onOpenChange: (open: boolean) => void;
   reportTitle: string;
   sections: ReportSection[];
+  selectedSectionIds: string[];
   onReorder: (sourceId: string, targetId: string) => void;
   onMove: (sectionId: string, direction: -1 | 1) => void;
+  onToggleSection: (sectionId: string) => void;
   onReset: () => void;
   onApply: () => void;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const selectedSectionSet = useMemo(() => new Set(selectedSectionIds), [selectedSectionIds]);
+  const selectedCount = sections.filter((section) => selectedSectionSet.has(section.id)).length;
+  const canApply = selectedCount > 0;
 
   function handleDragStart(event: DragEvent<HTMLLIElement>, sectionId: string) {
     setDraggingId(sectionId);
@@ -1029,7 +1075,7 @@ function ReportExportDialog({
               <p className="line-clamp-1 text-muted-foreground text-xs">{reportTitle}</p>
             </div>
             <span className="rounded-full border border-border/70 bg-background/60 px-2.5 py-1 text-muted-foreground text-xs">
-              {sections.length} sections
+              {selectedCount} of {sections.length} included
             </span>
           </div>
         </DialogHeader>
@@ -1040,8 +1086,8 @@ function ReportExportDialog({
         >
           <div className="grid gap-3 sm:grid-cols-3">
             <DataTile label="Deck title" value={reportTitle} />
+            <DataTile label="Included" value={`${selectedCount} of ${sections.length}`} />
             <DataTile label="Theme" value="Report default" />
-            <DataTile label="Notes" value="Included" />
           </div>
 
           <ol
@@ -1052,6 +1098,7 @@ function ReportExportDialog({
             {sections.map((section, index) => {
               const title = cleanReportText(section.title, "Untitled section");
               const isDragging = draggingId === section.id;
+              const isSelected = selectedSectionSet.has(section.id);
               return (
                 <li
                   key={section.id}
@@ -1061,11 +1108,27 @@ function ReportExportDialog({
                   onDrop={(event) => handleDrop(event, section.id)}
                   onDragEnd={() => setDraggingId(null)}
                   className={cn(
-                    "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border/70 bg-card/75 p-3 transition-[border-color,background-color,box-shadow] duration-200",
+                    "grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border/70 bg-card/75 p-3 transition-[border-color,background-color,box-shadow,opacity] duration-200",
+                    !isSelected && "border-dashed opacity-65",
                     isDragging && "border-brand-accent/60 bg-brand-accent/10 shadow-md",
                   )}
                   data-testid="report-export-section-row"
                 >
+                  <Button
+                    type="button"
+                    variant={isSelected ? "default" : "outline"}
+                    size="icon-sm"
+                    role="checkbox"
+                    aria-checked={isSelected}
+                    aria-label={`${isSelected ? "Exclude" : "Include"} ${title}`}
+                    onClick={() => onToggleSection(section.id)}
+                  >
+                    {isSelected ? (
+                      <CheckIcon className="size-4" />
+                    ) : (
+                      <span className="size-3 rounded-[3px] border border-current" />
+                    )}
+                  </Button>
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/70 text-muted-foreground">
                     <GripVerticalIcon className="size-4" />
                   </span>
@@ -1077,7 +1140,7 @@ function ReportExportDialog({
                       <span className="truncate font-medium text-sm">{title}</span>
                     </div>
                     <p className="mt-1 line-clamp-1 text-muted-foreground text-xs">
-                      {sectionTypeLabel(section.type)}
+                      {isSelected ? "Included" : "Excluded"} / {sectionTypeLabel(section.type)}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -1109,15 +1172,22 @@ function ReportExportDialog({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-border/70 border-t bg-background/85 p-3">
-          <Button type="button" variant="ghost" onClick={onReset}>
-            Reset
-          </Button>
+          <div className="min-w-0">
+            <Button type="button" variant="ghost" onClick={onReset}>
+              Reset
+            </Button>
+            {!canApply && (
+              <span className="ml-2 text-muted-foreground text-xs">
+                Select at least one section
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="button" onClick={onApply}>
-              Apply order
+            <Button type="button" disabled={!canApply} onClick={onApply}>
+              Apply choices
             </Button>
           </div>
         </div>
@@ -1823,6 +1893,23 @@ function reportSectionOrderStorageKey(report: ReportOutput): string {
   );
 }
 
+function reportSectionSelectionStorageKey(report: ReportOutput): string {
+  return reportSectionEditStorageKey(report).replace(
+    REPORT_SECTION_EDITS_STORAGE_PREFIX,
+    REPORT_SECTION_SELECTION_STORAGE_PREFIX,
+  );
+}
+
+function mergeSectionSelection(selection: string[] | null, sections: ReportSection[]): string[] {
+  const sectionIds = new Set(sections.map((section) => section.id));
+  if (selection === null) return sections.map((section) => section.id);
+  const nextSelection: string[] = [];
+  for (const id of selection) {
+    if (sectionIds.has(id) && !nextSelection.includes(id)) nextSelection.push(id);
+  }
+  return nextSelection;
+}
+
 function readReportSectionEdits(storageKey: string): Record<string, string> {
   if (typeof window === "undefined") return {};
   try {
@@ -1873,6 +1960,28 @@ function writeReportSectionOrder(storageKey: string, order: string[]) {
     window.localStorage.setItem(storageKey, JSON.stringify(order));
   } catch {
     // Browser storage can be disabled or full. The applied order still works in memory.
+  }
+}
+
+function readReportSectionSelection(storageKey: string): string[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((item): item is string => typeof item === "string" && item.length > 0);
+  } catch {
+    return null;
+  }
+}
+
+function writeReportSectionSelection(storageKey: string, selection: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(selection));
+  } catch {
+    // Browser storage can be disabled or full. The applied selection still works in memory.
   }
 }
 
