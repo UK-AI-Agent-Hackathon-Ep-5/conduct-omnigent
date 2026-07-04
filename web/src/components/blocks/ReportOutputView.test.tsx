@@ -55,6 +55,32 @@ const REPORT: ReportOutput = {
   ],
 };
 
+function mockAnimationFrames() {
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let nextId = 1;
+  const request = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    const id = nextId;
+    nextId += 1;
+    callbacks.set(id, callback);
+    return id;
+  });
+  const cancel = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+    callbacks.delete(id);
+  });
+
+  return {
+    flush() {
+      const pending = [...callbacks.values()];
+      callbacks.clear();
+      for (const callback of pending) callback(window.performance.now() + 220);
+    },
+    restore() {
+      request.mockRestore();
+      cancel.mockRestore();
+    },
+  };
+}
+
 type MockSelectionState = {
   text: string;
   anchorNode: Node | null;
@@ -122,21 +148,37 @@ describe("ReportOutputView", () => {
   });
 
   it("scrolls the section preview strip from wheel input", () => {
+    const animation = mockAnimationFrames();
     render(<ReportOutputView report={REPORT} enablePixi={false} />);
 
     const strip = screen.getByTestId("report-section-strip");
     Object.defineProperty(strip, "clientWidth", { configurable: true, value: 320 });
     Object.defineProperty(strip, "scrollWidth", { configurable: true, value: 960 });
-    const scrollTo = vi.fn((options: ScrollToOptions) => {
-      strip.scrollLeft = Number(options.left ?? 0);
-    });
-    Object.defineProperty(strip, "scrollTo", { configurable: true, value: scrollTo });
 
     fireEvent.wheel(strip, { deltaY: 180 });
+    animation.flush();
 
-    expect(scrollTo).toHaveBeenCalledWith({ left: 180, behavior: "smooth" });
-    expect(strip.scrollLeft).toBe(180);
+    expect(strip.scrollLeft).toBe(360);
     expect(strip.className).not.toContain("snap");
+    animation.restore();
+  });
+
+  it("keeps macOS trackpad wheel momentum from resetting the section scroll target", () => {
+    const animation = mockAnimationFrames();
+    render(<ReportOutputView report={REPORT} enablePixi={false} />);
+
+    const strip = screen.getByTestId("report-section-strip");
+    Object.defineProperty(strip, "clientWidth", { configurable: true, value: 320 });
+    Object.defineProperty(strip, "scrollWidth", { configurable: true, value: 960 });
+
+    fireEvent.wheel(strip, { deltaY: 180 });
+    strip.scrollLeft = 12;
+    fireEvent.scroll(strip);
+    fireEvent.wheel(strip, { deltaY: 10 });
+    animation.flush();
+
+    expect(strip.scrollLeft).toBe(380);
+    animation.restore();
   });
 
   it("keeps completed sections visible and shows the incoming section loader", () => {

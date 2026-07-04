@@ -41,6 +41,10 @@ import {
 import type { ReportOutput, ReportPricing, ReportSection, ReportSeverity } from "./reportOutput";
 
 const SEVERITY_ORDER: ReportSeverity[] = ["critical", "high", "medium", "low", "info"];
+const SECTION_WHEEL_SCROLL_SPEED = 2;
+const SECTION_WHEEL_LINE_HEIGHT = 40;
+const SECTION_WHEEL_ANIMATION_MS = 180;
+const SECTION_BUTTON_SCROLL_STEP = 520;
 
 const SEVERITY_STYLE: Record<
   ReportSeverity,
@@ -157,8 +161,33 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
     if (!currentScroller) return;
     const scroller: HTMLDivElement = currentScroller;
     let targetScrollLeft = scroller.scrollLeft;
+    let animationFrame: number | null = null;
+    let animationStart = 0;
+    let animationFrom = scroller.scrollLeft;
+
+    function animateTo(left: number) {
+      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
+      animationStart = window.performance.now();
+      animationFrom = scroller.scrollLeft;
+
+      const step = (timestamp: number) => {
+        const elapsed = timestamp - animationStart;
+        const progress = Math.min(Math.max(elapsed / SECTION_WHEEL_ANIMATION_MS, 0), 1);
+        const eased = 1 - (1 - progress) ** 3;
+        scroller.scrollLeft = animationFrom + (left - animationFrom) * eased;
+        if (progress < 1) {
+          animationFrame = window.requestAnimationFrame(step);
+          return;
+        }
+        animationFrame = null;
+        targetScrollLeft = scroller.scrollLeft;
+      };
+
+      animationFrame = window.requestAnimationFrame(step);
+    }
 
     function handleWheel(event: WheelEvent) {
+      if (event.ctrlKey) return;
       const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
       if (maxScrollLeft <= 0) return;
 
@@ -167,31 +196,37 @@ export function ReportOutputView({ report, isStreaming = false }: ReportOutputVi
       if (dominantDelta === 0) return;
 
       let scaledDelta = dominantDelta;
-      if (event.deltaMode === 1) scaledDelta = dominantDelta * 32;
+      if (event.deltaMode === 1) scaledDelta = dominantDelta * SECTION_WHEEL_LINE_HEIGHT;
       if (event.deltaMode === 2) scaledDelta = dominantDelta * scroller.clientWidth;
+      scaledDelta *= SECTION_WHEEL_SCROLL_SPEED;
       targetScrollLeft = Math.min(Math.max(targetScrollLeft, 0), maxScrollLeft);
       const nextScrollLeft = Math.min(Math.max(targetScrollLeft + scaledDelta, 0), maxScrollLeft);
 
       if (nextScrollLeft === targetScrollLeft) return;
       event.preventDefault();
       targetScrollLeft = nextScrollLeft;
-      smoothScrollTo(scroller, nextScrollLeft);
+      animateTo(nextScrollLeft);
     }
 
     function syncTarget() {
+      if (animationFrame !== null) return;
       targetScrollLeft = scroller.scrollLeft;
     }
 
     scroller.addEventListener("wheel", handleWheel, { passive: false });
     scroller.addEventListener("scroll", syncTarget, { passive: true });
     return () => {
+      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
       scroller.removeEventListener("wheel", handleWheel);
       scroller.removeEventListener("scroll", syncTarget);
     };
   }, []);
 
   function scrollSections(direction: -1 | 1) {
-    scrollerRef.current?.scrollBy({ left: direction * 360, behavior: "smooth" });
+    scrollerRef.current?.scrollBy({
+      left: direction * SECTION_BUTTON_SCROLL_STEP,
+      behavior: "smooth",
+    });
   }
 
   function openSection(sectionId: string) {
@@ -414,8 +449,7 @@ function ReportSectionDialog({
         ? "Selected text is ready for an in-place edit."
         : "Select text in the finding to edit it."
       : "Ask about this section.";
-  const draftPlaceholder =
-    mode === "refine" ? "Describe the edit" : "Ask about this section";
+  const draftPlaceholder = mode === "refine" ? "Describe the edit" : "Ask about this section";
   const submitLabel = mode === "refine" ? "Refine" : "Ask";
 
   useEffect(() => {
@@ -737,12 +771,7 @@ function ReportSectionDialog({
                         {activeSelection.text}
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={clearActiveSelection}
-                    >
+                    <Button type="button" variant="ghost" size="sm" onClick={clearActiveSelection}>
                       Clear
                     </Button>
                   </div>
@@ -1351,14 +1380,6 @@ function CitationChips({ section }: { section: ReportSection }) {
       ))}
     </div>
   );
-}
-
-function smoothScrollTo(scroller: HTMLDivElement, left: number) {
-  if (typeof scroller.scrollTo !== "function") {
-    scroller.scrollLeft = left;
-    return;
-  }
-  scroller.scrollTo({ left, behavior: "smooth" });
 }
 
 function buildReportSectionQuestion(
