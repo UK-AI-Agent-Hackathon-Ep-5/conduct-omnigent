@@ -24,6 +24,7 @@ export const BUILTIN_AGENTS = new Set([
   "kimi-native-ui", // Kimi
   "polly",
   "debby",
+  "impact-radar",
 ]);
 
 // Preferred display order for the built-in group. The server returns
@@ -42,6 +43,7 @@ export const AGENT_DISPLAY_ORDER = [
   "Kimi",
   "Polly",
   "Debby",
+  "Impact Radar",
 ];
 
 function displayRank(name: string): number {

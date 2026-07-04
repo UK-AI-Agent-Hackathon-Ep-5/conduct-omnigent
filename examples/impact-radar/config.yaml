@@ -12,12 +12,11 @@
 #   omnigent run examples/impact-radar -p "Analyze OpenAI + Gemini pricing and
 #     deprecation changes and their impact on ./examples/impact-radar/data/demo_codebase"
 #
-# Setup: this runs on the OpenAI Agents SDK harness. openai-agents treats an
-# *unpinned* model as a Databricks model, so every agent pins `model: gpt-4o` to
-# use your OpenAI / OpenAI-compatible gateway. Configure a credential with
-# `omnigent setup` (an OPENAI_API_KEY, or a gateway/local provider), and set
-# TAVILY_API_KEY for the researcher's live web search (optional — it falls back
-# to a bundled fetcher). Override the model per run with `--model`.
+# Setup: this runs on the Codex harness with no pinned model or provider. It
+# uses the Codex/OpenAI provider configured for this deployment. Set
+# TAVILY_API_KEY for the researcher's live web search if you want live search;
+# without it the researcher falls back to bundled official seed URLs. Override
+# the harness or model per run with `--harness` / `--model` when needed.
 
 spec_version: 1
 name: impact_radar
@@ -32,18 +31,8 @@ description: >-
 
 executor:
   type: omnigent
-  model: deepseek-v4-pro
-  # Route to the named `deepseek` provider declared in ~/.omnigent/config.yaml
-  # (kind: gateway, openai family, base_url https://api.deepseek.com). Pinning by
-  # name avoids falling back to whatever the global openai-family default is.
-  auth:
-    type: provider
-    name: deepseek
   config:
-    harness: openai-agents
-    # Chat vs Responses wire is driven by the provider's `wire_api: chat`
-    # (DeepSeek has no Responses API). Do not set `use_responses` here — the
-    # omnigent config dict stringifies it and "False" reads back as truthy.
+    harness: codex
 
 async: true
 cancellable: true

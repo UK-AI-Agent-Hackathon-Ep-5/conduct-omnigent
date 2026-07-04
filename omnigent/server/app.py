@@ -141,9 +141,10 @@ _QWEN_NATIVE_AGENT_NAME = QWEN_NATIVE_CODING_AGENT.agent_name
 _KIMI_NATIVE_AGENT_NAME = KIMI_NATIVE_CODING_AGENT.agent_name
 _DEBBY_AGENT_NAME = "debby"
 _POLLY_AGENT_NAME = "polly"
+_IMPACT_RADAR_AGENT_NAME = "impact-radar"
 _UNMATCHED_ROUTE_TEMPLATE = "<unmatched>"
 _SESSION_PATH_RE = re.compile(r"/v1/sessions/([^/]+)")
-# polly's and debby's multi-file bundles are packaged under
+# polly's, debby's, and impact-radar's multi-file bundles are packaged under
 # omnigent.resources.examples (see pyproject package-data), so they resolve
 # in both a repo checkout and an installed wheel. The presence check in each
 # seeder is a safety net.
@@ -151,6 +152,9 @@ _SESSION_PATH_RE = re.compile(r"/v1/sessions/([^/]+)")
 # Windows checkout (where Git leaves it as a stub text file); a no-op elsewhere.
 _DEBBY_BUNDLE_SOURCE = resolve_repo_symlink(Path(_examples_resources.__file__).parent / "debby")
 _POLLY_BUNDLE_SOURCE = resolve_repo_symlink(Path(_examples_resources.__file__).parent / "polly")
+_IMPACT_RADAR_BUNDLE_SOURCE = resolve_repo_symlink(
+    Path(_examples_resources.__file__).parent / "impact-radar"
+)
 
 
 class _FastAPICallNext(Protocol):
@@ -424,6 +428,7 @@ def _ensure_default_agents(
     _ensure_default_kimi_native_agent(agent_store, artifact_store, agent_cache)
     _ensure_default_debby_agent(agent_store, artifact_store, agent_cache)
     _ensure_default_polly_agent(agent_store, artifact_store, agent_cache)
+    _ensure_default_impact_radar_agent(agent_store, artifact_store, agent_cache)
     _ensure_extra_builtin_agents(agent_store, artifact_store, agent_cache)
 
 
@@ -982,6 +987,58 @@ def _ensure_default_polly_agent(
         agent_cache,
         name=_POLLY_AGENT_NAME,
         bundle_bytes=_build_polly_bundle(),
+    )
+
+
+def _build_impact_radar_bundle() -> bytes:
+    """
+    Build a gzipped tarball of the ``examples/impact-radar`` agent bundle.
+
+    impact-radar is a multi-file image with sub-agents, skills, scripts, and
+    demo data, so the source is the directory itself rather than a generated
+    single YAML.
+
+    :returns: Gzipped tarball bytes suitable for the artifact store.
+    """
+    import tempfile
+
+    from omnigent.spec import materialize_bundle
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bundle_dir = materialize_bundle(_IMPACT_RADAR_BUNDLE_SOURCE, Path(tmpdir) / "bundle")
+        return _tar_gz_dir(bundle_dir)
+
+
+def _ensure_default_impact_radar_agent(
+    agent_store: AgentStore,
+    artifact_store: ArtifactStore,
+    agent_cache: Any,
+) -> None:
+    """
+    Register the impact-radar reporting agent if its bundle ships here.
+
+    Called during server lifespan startup so the Web UI's new-session picker
+    can offer impact-radar as a built-in analysis/reporting agent. When the
+    bundle is absent, seeding is skipped so startup does not publish a broken
+    card. Content-aware via :func:`_ensure_builtin_agent`.
+
+    :param agent_store: Store for agent metadata.
+    :param artifact_store: Store for agent bundles.
+    :param agent_cache: Cache for loaded agent specs.
+    """
+    if not (_IMPACT_RADAR_BUNDLE_SOURCE / "config.yaml").is_file():
+        _logger.debug(
+            "impact-radar bundle not found at %s; skipping seed",
+            _IMPACT_RADAR_BUNDLE_SOURCE,
+        )
+        return
+
+    _ensure_builtin_agent(
+        agent_store,
+        artifact_store,
+        agent_cache,
+        name=_IMPACT_RADAR_AGENT_NAME,
+        bundle_bytes=_build_impact_radar_bundle(),
     )
 
 

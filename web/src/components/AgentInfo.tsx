@@ -56,6 +56,10 @@ import { RestartWithModelDialog } from "@/shell/RestartWithModelDialog";
 import { useServerInfo } from "@/lib/CapabilitiesContext";
 import { useSessionHostVersion } from "@/hooks/RunnerHealthProvider";
 
+const AGENT_DISPLAY_NAMES: Record<string, string> = {
+  "impact-radar": "Impact Radar",
+};
+
 /**
  * Whether a harness id is in the codex (GPT) family — the only harness the
  * "Restart with model…" affordance is offered for. Both the canonical and
@@ -85,7 +89,7 @@ export function agentDisplayLabel(name: string): string {
   const baseName = agentRootName(name);
   const nativeAgent = nativeCodingAgentForAgentName(baseName);
   if (nativeAgent?.key === "claude") return "Claude";
-  return nativeAgent?.displayName ?? capitalizeAgentName(baseName);
+  return nativeAgent?.displayName ?? AGENT_DISPLAY_NAMES[baseName] ?? capitalizeAgentName(baseName);
 }
 
 /** Compact pill row listing MCP servers attached to an agent. */

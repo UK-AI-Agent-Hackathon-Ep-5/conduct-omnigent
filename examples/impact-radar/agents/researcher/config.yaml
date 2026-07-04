@@ -5,26 +5,15 @@ description: >-
   changelog, and deprecation pages and turns them into source cards + evidence
   cards with direct quotes. Never states a fact without a source.
 
-# Runs on the OpenAI Agents SDK harness. IMPORTANT: openai-agents treats an
-# *unpinned* model as a Databricks model and can silently route through the
-# Databricks gateway (see examples/debby/agents/gpt/config.yaml). We pin a model
-# so it uses your OpenAI / OpenAI-compatible gateway instead. Override the model
-# with `--model`, or add `auth: {type: provider, name: <your-omnigent-provider>}`
-# to route a gateway/local endpoint configured via `omnigent setup`.
+# Runs on the Codex harness with no pinned model or provider, so it follows the
+# deployment's configured Codex/OpenAI default.
 executor:
   type: omnigent
-  model: deepseek-v4-pro
-  # Route to the named `deepseek` provider in ~/.omnigent/config.yaml.
-  auth:
-    type: provider
-    name: deepseek
   # The deep-research loop accumulates queries, sources, and evidence across
   # levels, so give the researcher a larger context window than the default.
   context_window: 200000
   config:
-    harness: openai-agents
-    # Chat wire comes from the provider's `wire_api: chat` (DeepSeek has no
-    # Responses API); don't set `use_responses` here (see orchestrator note).
+    harness: codex
 
 os_env:
   type: caller_process

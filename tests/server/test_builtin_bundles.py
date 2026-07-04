@@ -1,12 +1,12 @@
 """Tests for the built-in agent bundle builders in ``omnigent/server/app.py``.
 
 The server seeds Web-UI-launchable agents (claude-native, codex-native, and
-the shipped ``debby`` / ``polly`` examples) by materializing each spec into a
-gzipped tarball at startup. These builders were previously exercised only
-transitively by the agents' e2e suites; a packaging regression (a dropped
-``config.yaml``, a spec that no longer materializes) would surface late and
-slow. These unit tests build each bundle directly and assert it is a valid,
-reproducible tarball containing the expected spec entry.
+the shipped ``debby`` / ``polly`` / ``impact-radar`` examples) by materializing
+each spec into a gzipped tarball at startup. These builders were previously
+exercised only transitively by the agents' e2e suites. A packaging regression
+like a dropped ``config.yaml`` or a spec that no longer materializes would
+surface late and slow. These unit tests build each bundle directly and assert
+it is a valid, reproducible tarball containing the expected spec entry.
 """
 
 from __future__ import annotations
@@ -31,18 +31,21 @@ _BUILDERS = [
     ("_build_kiro_native_bundle", "kiro-native-ui.yaml", False),
     ("_build_debby_bundle", "config.yaml", True),
     ("_build_polly_bundle", "config.yaml", True),
+    ("_build_impact_radar_bundle", "config.yaml", True),
 ]
 
 
 def _shipped_example_missing(builder: str) -> bool:
     """Return True when ``builder``'s shipped-example source is not packaged here.
 
-    debby/polly are only seeded when their bundle ships with the wheel; a
-    generic deployment legitimately omits them. Skip rather than fail there.
+    debby, polly, and impact-radar are only seeded when their bundle ships with
+    the wheel. A generic deployment legitimately omits them. Skip rather than
+    fail there.
     """
     source = {
         "_build_debby_bundle": app._DEBBY_BUNDLE_SOURCE,
         "_build_polly_bundle": app._POLLY_BUNDLE_SOURCE,
+        "_build_impact_radar_bundle": app._IMPACT_RADAR_BUNDLE_SOURCE,
     }[builder]
     return not (source / "config.yaml").is_file()
 
@@ -92,7 +95,7 @@ def test_bundle_builder_is_reproducible(
 
 # ── Backwards-compatible loading of the shipped sub-agent examples ──────────
 #
-# polly and debby are the two shipped examples that ship *sub-agents*, so they
+# polly, debby, and impact-radar are shipped examples that include sub-agents, so they
 # are the surface for the version-skew regression matei hit: a newer server
 # adds a sub-agent whose harness an older client can't validate, and the old
 # client must still launch the parent (dropping only the unsupported worker)
@@ -106,6 +109,11 @@ def test_bundle_builder_is_reproducible(
 _SHIPPED_SUB_AGENT_EXAMPLES = [
     ("polly", app._POLLY_BUNDLE_SOURCE, {"claude_code", "codex", "opencode", "pi"}),
     ("debby", app._DEBBY_BUNDLE_SOURCE, {"claude", "gpt"}),
+    (
+        "impact_radar",
+        app._IMPACT_RADAR_BUNDLE_SOURCE,
+        {"researcher", "code-scanner", "reviewer"},
+    ),
 ]
 
 

@@ -693,13 +693,13 @@ def test_ensure_default_antigravity_agent_seeds_card(seed_stores: _SeedStores) -
     assert loaded.spec.executor.config.get("harness") == "antigravity-native"
 
 
-def test_ensure_default_agents_includes_antigravity(seed_stores: _SeedStores) -> None:
+def test_ensure_default_agents_includes_newer_builtins(seed_stores: _SeedStores) -> None:
     """
-    The startup seeder registers the antigravity built-in alongside the others.
+    The startup seeder registers newer built-ins alongside the older defaults.
 
-    ``_ensure_default_agents`` is the single call the server lifespan makes; a
-    regression that drops the antigravity line would silently remove it from the
-    picker even though its helper still works.
+    ``_ensure_default_agents`` is the single call the server lifespan makes. A
+    regression that drops one helper line would silently remove that agent from
+    the picker even though its helper still works.
     """
     server_app._ensure_default_agents(
         seed_stores.agent_store,
@@ -710,6 +710,7 @@ def test_ensure_default_agents_includes_antigravity(seed_stores: _SeedStores) ->
     assert (
         seed_stores.agent_store.get_by_name(server_app._ANTIGRAVITY_NATIVE_AGENT_NAME) is not None
     )
+    assert seed_stores.agent_store.get_by_name(server_app._IMPACT_RADAR_AGENT_NAME) is not None
 
 
 def test_ensure_default_polly_agent_is_idempotent(seed_stores: _SeedStores) -> None:
@@ -992,3 +993,38 @@ def test_ensure_default_debby_agent_skips_when_bundle_absent(
     )
 
     assert seed_stores.agent_store.get_by_name(server_app._DEBBY_AGENT_NAME) is None
+
+
+def test_ensure_default_impact_radar_agent_seeds_card(seed_stores: _SeedStores) -> None:
+    """
+    Seeding registers impact-radar as a built-in the picker can render.
+    """
+    server_app._ensure_default_impact_radar_agent(
+        seed_stores.agent_store,
+        seed_stores.artifact_store,
+        seed_stores.agent_cache,
+    )
+
+    seeded = seed_stores.agent_store.get_by_name(server_app._IMPACT_RADAR_AGENT_NAME)
+    assert seeded is not None, "impact-radar was not registered"
+    assert seeded.name == "impact-radar"
+    assert seed_stores.artifact_store.get(seeded.bundle_location) is not None
+
+
+def test_ensure_default_impact_radar_agent_skips_when_bundle_absent(
+    seed_stores: _SeedStores, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    No impact-radar bundle on disk means no broken built-in card is seeded.
+    """
+    monkeypatch.setattr(
+        server_app, "_IMPACT_RADAR_BUNDLE_SOURCE", tmp_path / "no-such-impact-radar"
+    )
+
+    server_app._ensure_default_impact_radar_agent(
+        seed_stores.agent_store,
+        seed_stores.artifact_store,
+        seed_stores.agent_cache,
+    )
+
+    assert seed_stores.agent_store.get_by_name(server_app._IMPACT_RADAR_AGENT_NAME) is None

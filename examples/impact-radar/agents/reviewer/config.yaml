@@ -5,21 +5,12 @@ description: >-
   reports inaccuracies, unsupported claims, and mismatched numbers. Edits
   nothing.
 
-# Pin a DIFFERENT model than the orchestrator/researcher so the review is a
-# genuine second opinion (e.g. a stronger reasoning model via the same gateway).
-# Change `model` to whatever your provider exposes. See the researcher config for
-# the openai-agents model-pinning caveat.
+# Runs on the Codex harness with no pinned model or provider. Use a per-run or
+# per-dispatch model override if you want the reviewer on a different model.
 executor:
   type: omnigent
-  model: deepseek-v4-pro
-  # Route to the named `deepseek` provider in ~/.omnigent/config.yaml.
-  auth:
-    type: provider
-    name: deepseek
   config:
-    harness: openai-agents
-    # Chat wire comes from the provider's `wire_api: chat` (DeepSeek has no
-    # Responses API); don't set `use_responses` here (see orchestrator note).
+    harness: codex
 
 os_env:
   type: caller_process

@@ -40,7 +40,7 @@ official pricing / deprecation sources   (researcher sub-agent, live web + citat
 ## Layout
 
 ```
-config.yaml            orchestrator (openai-agents harness)
+config.yaml            orchestrator (codex harness)
 agents/                researcher · code-scanner · reviewer  (sub-agents)
 skills/                the phase playbooks (SKILL.md)
 scripts/               deterministic backbone, run via the shell (stdlib-only)
@@ -75,34 +75,12 @@ plan_queries.py     provider × facets → query_plan.json   (breadth=4 per face
 
 ## Setup
 
-Runs on the **OpenAI Agents SDK** harness, wired to **DeepSeek** via its
-OpenAI-compatible API. Add a `deepseek` provider to `~/.omnigent/config.yaml`:
+Runs on the **Codex** harness with no pinned model or provider. It uses the
+Codex/OpenAI provider configured for this deployment, so the bundle does not
+require any named gateway provider or provider-specific API key.
 
-```yaml
-providers:
-  deepseek:
-    kind: gateway
-    openai:
-      base_url: https://api.deepseek.com
-      api_key: $DEEPSEEK_API_KEY
-      wire_api: chat            # DeepSeek has no Responses API — must be chat
-```
-
-then `export DEEPSEEK_API_KEY=sk-...`. Each agent pins `model: deepseek-v4-pro`
-and `auth: {type: provider, name: deepseek}`.
-
-> **Two gotchas this bundle already handles:**
-> - `openai-agents` treats an *unpinned* model as a Databricks model, so every
->   agent pins `model: deepseek-v4-pro` (at the executor level, where
->   `_resolve_spec_model` reads it).
-> - The Agents SDK defaults to the OpenAI **Responses** API, which DeepSeek does
->   not support. The provider's `wire_api: chat` forces Chat Completions. Do
->   **not** set `use_responses` inside `executor.config` — the omnigent config
->   dict stringifies it and `"False"` reads back as truthy.
->
-> To point at a different OpenAI-compatible endpoint, change the provider's
-> `base_url`/`wire_api` and the agents' `model:`, or override per run with
-> `--model`.
+Use `--harness` or `--model` when running locally if you want a different
+execution surface or model for a specific run.
 
 For **live web research**, put a Tavily key in the bundle's gitignored `.env`
 (`TAVILY_API_KEY=tvly-...`). The researcher searches via
