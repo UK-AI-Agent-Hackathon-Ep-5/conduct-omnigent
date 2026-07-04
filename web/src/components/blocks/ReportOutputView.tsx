@@ -114,6 +114,11 @@ const REPORT_SHELL_STYLE = {
     "radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--brand-accent) 18%, transparent) 0, transparent 34%), radial-gradient(circle at 96% 10%, color-mix(in srgb, var(--status-blue) 13%, transparent) 0, transparent 32%)",
 } satisfies CSSProperties;
 
+const REPORT_PREVIEW_CARD_STYLE = {
+  gridTemplateRows: "2.75rem 2.5rem 3rem 1.625rem 3rem",
+  height: "17rem",
+} satisfies CSSProperties;
+
 const REPORT_BRAND_PATTERN = /\bConduct\s+Omnigent\b/gi;
 
 type ReportDialogMode = "chat" | "refine";
@@ -1294,22 +1299,48 @@ function ReportSectionPreview({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "group relative min-h-48 w-80 shrink-0 overflow-hidden rounded-xl border border-border/75 bg-background/70 p-4 text-left shadow-sm transition-[box-shadow,border-color,background-color,transform] duration-200 hover:border-brand-accent/40 hover:bg-card/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:hover:-translate-y-0.5",
+        "group relative grid w-80 shrink-0 gap-2 overflow-hidden rounded-xl border border-border/75 bg-background/70 p-4 text-left shadow-sm transition-[box-shadow,border-color,background-color] duration-200 hover:border-brand-accent/40 hover:bg-card/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected && "border-brand-accent/70 bg-card shadow-md ring-1 ring-brand-accent/25",
       )}
+      data-testid="report-section-preview"
+      style={REPORT_PREVIEW_CARD_STYLE}
     >
       <div aria-hidden className={cn("absolute inset-y-4 left-0 w-1 rounded-r-full", style.bar)} />
-      <div className="flex items-center justify-between gap-2 pl-1">
-        <SeverityBadge severity={section.severity} />
-        <span className="text-muted-foreground text-xs">{sectionTypeLabel(section.type)}</span>
+      <div
+        className="grid min-w-0 grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] items-start gap-3 pl-1"
+        data-testid="report-preview-meta"
+      >
+        <div className="min-w-0">
+          <span className="block font-medium text-[0.65rem] text-muted-foreground uppercase tracking-normal">
+            Impact level
+          </span>
+          <SeverityBadge severity={section.severity} />
+        </div>
+        <div className="min-w-0">
+          <span className="block font-medium text-[0.65rem] text-muted-foreground uppercase tracking-normal">
+            Categories
+          </span>
+          <span className="mt-1 block truncate rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-muted-foreground text-xs">
+            {sectionTypeLabel(section.type)}
+          </span>
+        </div>
       </div>
-      <h5 className="mt-3 line-clamp-2 pl-1 font-semibold text-sm leading-5 tracking-normal">
+      <h5
+        className="line-clamp-2 pl-1 font-semibold text-sm leading-5 tracking-normal"
+        data-testid="report-preview-title"
+      >
         {cleanReportText(section.title, "Untitled section")}
       </h5>
-      <p className="mt-2 line-clamp-3 pl-1 text-muted-foreground text-xs leading-5">
+      <p
+        className="line-clamp-3 pl-1 text-muted-foreground text-xs leading-4"
+        data-testid="report-preview-finding"
+      >
         {cleanReportText(section.content)}
       </p>
-      <div className="mt-3 pl-1">
+      <div className="min-w-0 pl-1" data-testid="report-preview-level-plot">
+        <span className="mb-1 block font-medium text-[0.65rem] text-muted-foreground uppercase tracking-normal">
+          Level plot
+        </span>
         <SeverityMeter severity={section.severity} />
       </div>
       <PreviewFooter section={section} />
@@ -1400,12 +1431,17 @@ function ReportLoadingStrip() {
 
 function PreviewFooter({ section }: { section: ReportSection }) {
   const value = previewValue(section);
-  if (!value) return null;
+  if (!value) {
+    return <div aria-hidden className="h-12" data-testid="report-preview-footer-slot" />;
+  }
   const label = cleanReportText(value.label, "Detail");
-  const preview = cleanReportText(value.value);
+  const preview = cleanReportText(value.value, "No additional detail");
   return (
-    <div className="mt-3 rounded-lg border border-border/70 bg-card/55 px-2.5 py-2 text-xs">
-      <span className="block text-muted-foreground">{label}</span>
+    <div
+      className="flex h-12 min-w-0 flex-col justify-center rounded-lg border border-border/70 bg-card/55 px-2.5 py-2 text-xs"
+      data-testid="report-preview-footer"
+    >
+      <span className="block truncate text-muted-foreground">{label}</span>
       <span className="mt-0.5 block truncate font-medium">{preview}</span>
     </div>
   );

@@ -152,13 +152,57 @@ describe("ReportOutputView", () => {
   });
 
   it("renders a horizontal section preview strip without inline detail", () => {
-    render(<ReportOutputView report={REPORT} enablePixi={false} />);
+    const reportWithEmptyFooter: ReportOutput = {
+      ...REPORT,
+      sections: [
+        ...REPORT.sections,
+        {
+          id: "no-preview-detail",
+          type: "policy_gap",
+          title: "Policy Gap Without Concise Detail",
+          content: "This section has no metric, cost delta, priority, provider, or model value.",
+          severity: "low",
+          data: {},
+        },
+      ],
+    };
+
+    render(<ReportOutputView report={reportWithEmptyFooter} enablePixi={false} />);
 
     expect(screen.getByTestId("report-output")).toBeDefined();
-    expect(screen.getByTestId("report-section-strip")).toBeDefined();
+    const strip = screen.getByTestId("report-section-strip");
+    expect(strip).toBeDefined();
     expect(screen.getByText("LLM Impact Radar Report")).toBeDefined();
     expect(screen.getAllByText("Providers checked").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("report-section-detail")).toBeNull();
+
+    const previews = within(strip).getAllByTestId("report-section-preview");
+    expect((previews[0] as HTMLElement).style.gridTemplateRows).toBe(
+      "2.75rem 2.5rem 3rem 1.625rem 3rem",
+    );
+    expect((previews[0] as HTMLElement).style.height).toBe("17rem");
+    expect(previews[0]!.className).not.toContain("translate-y");
+    expect(previews[0]!.className).not.toContain("transform");
+    for (const preview of previews) {
+      const meta = within(preview).getByTestId("report-preview-meta");
+      expect(within(meta).getByText("Impact level")).toBeDefined();
+      expect(within(meta).getByText("Categories")).toBeDefined();
+      expect(within(preview).getByTestId("report-preview-title").className).toContain(
+        "line-clamp-2",
+      );
+      expect(within(preview).getByTestId("report-preview-finding").className).toContain(
+        "line-clamp-3",
+      );
+      expect(within(preview).getByTestId("report-preview-level-plot")).toBeDefined();
+      const hasFooter = within(preview).queryByTestId("report-preview-footer");
+      const hasFooterSlot = within(preview).queryByTestId("report-preview-footer-slot");
+      expect(Boolean(hasFooter) || Boolean(hasFooterSlot)).toBe(true);
+    }
+    expect(within(previews[0]!).getByTestId("report-preview-footer").className).toContain("h-12");
+    expect(within(previews[3]!).getByTestId("report-preview-footer-slot").className).toContain(
+      "h-12",
+    );
+    expect(within(previews[3]!).queryByTestId("report-preview-footer")).toBeNull();
   });
 
   it("keeps the generated report free of the product brand label", () => {
