@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="impact-radar-title">
+  <title id="impact-radar-title">Impact Radar icon</title>
+  <defs>
+    <linearGradient id="impact-radar-orange" x1="16" y1="46" x2="48" y2="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f85018"/>
+      <stop offset="1" stop-color="#ff8a4a"/>
+    </linearGradient>
+    <linearGradient id="impact-radar-teal" x1="24" y1="12" x2="42" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4dc5a0"/>
+      <stop offset="1" stop-color="#26a079"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#fff3ec"/>
+  <circle cx="32" cy="34" r="25" fill="#ffffff" opacity="0.72"/>
+  <path d="M14 34a18 18 0 0 1 18-18" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>
+  <path d="M50 34a18 18 0 0 1-18 18" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>
+  <path d="M23 34a9 9 0 0 1 9-9" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>
+  <path d="M41 34a9 9 0 0 1-9 9" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>
+  <path d="M19 34a13 13 0 0 1 13-13" fill="none" stroke="url(#impact-radar-orange)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M45 34a13 13 0 0 1-13 13" fill="none" stroke="url(#impact-radar-orange)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M32 34 44.5 26.5" fill="none" stroke="url(#impact-radar-orange)" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="32" cy="34" r="4.8" fill="#f85018"/>
+  <circle cx="45" cy="26" r="4.8" fill="#ffffff" stroke="#f85018" stroke-width="3"/>
+  <path d="M25 13c4.7-3.3 9.3-3.3 14 0" fill="none" stroke="url(#impact-radar-teal)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M20.5 8.5c7.4-5.1 15.6-5.1 23 0" fill="none" stroke="url(#impact-radar-teal)" stroke-width="4" stroke-linecap="round" opacity="0.92"/>
+  <path d="M32 7v5" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>
+  <path d="M7 34h5" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>
+  <path d="M52 34h5" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>
+  <path d="M32 56v-5" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>
+</svg>
